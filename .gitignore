@@ -1,0 +1,34 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.swp
+*.swo
+
+# API keys — never commit real credentials
+.env
+
+# OpenCode environment (not project code)
+.opencode/
+execution/
+specs/
+goals/
+docs/
+AGENTS.md
+PROCESS.md
+FIRST_README.md
+opencode.jsonc
+
+# Reference/development sources (not project code)
+/readme/
+
+# Runtime / local state
+.playwright-cli/
+tmp/
+.tmp/
+snapshots/
+/legacy/
+/CONTINUITY.md
+/PURPOSE.md
+/TEAM.md
+/CHAIN.md
+/TASKS.md
