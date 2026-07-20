@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}{{ server.name }} — Детали{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <a href="{{ url_for('servers.list_servers') }}" class="text-sm text-gray-500 hover:text-gray-700">← Назад к списку</a>
+    <h1 class="text-2xl font-bold mt-2 mb-6 text-gray-800">{{ server.name }} <span class="text-sm text-gray-400">#{{ server.id }}</span></h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white shadow rounded p-4">
+            <h2 class="text-sm uppercase text-gray-500 mb-3">Основное</h2>
+            <dl class="text-sm space-y-1">
+                <div><dt class="text-gray-500 inline">IP: </dt><dd class="inline font-mono">{{ server.ip_address or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Провайдер: </dt><dd class="inline">{{ server.provider or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Логин провайдера: </dt><dd class="inline">{{ server.provider_login or '—' }}</dd></div>
+                {% if passwords_visible %}
+                <div><dt class="text-gray-500 inline">Пароль root: </dt><dd class="inline font-mono">{{ server.password or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Пароль провайдера: </dt><dd class="inline font-mono">{{ server.provider_password or '—' }}</dd></div>
+                {% else %}
+                <p class="text-xs text-gray-400 mt-2">Пароли скрыты (роль {{ current_user.role }}).</p>
+                {% endif %}
+                <div><dt class="text-gray-500 inline">ОС: </dt><dd class="inline">{{ server.os or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">CPU: </dt><dd class="inline">{{ server.cpu or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">RAM: </dt><dd class="inline">{{ server.ram or '—' }}</dd></div>
+            </dl>
+        </div>
+
+        <div class="bg-white shadow rounded p-4">
+            <h2 class="text-sm uppercase text-gray-500 mb-3">Сервисы</h2>
+            <ul class="text-sm space-y-1">
+                <li>Exim: <strong class="{{ 'text-green-600' if server.has_exim else 'text-gray-400' }}">{{ 'да' if server.has_exim else 'нет' }}</strong></li>
+                <li>Squid: <strong class="{{ 'text-green-600' if server.has_squid else 'text-gray-400' }}">{{ 'да' if server.has_squid else 'нет' }}</strong></li>
+                <li>VPN: <strong class="{{ 'text-green-600' if server.has_vpn else 'text-gray-400' }}">{{ 'да' if server.has_vpn else 'нет' }}</strong></li>
+                <li class="pt-2">Активен: <strong class="{{ 'text-green-600' if server.active else 'text-red-600' }}">{{ 'да' if server.active else 'нет' }}</strong></li>
+            </ul>
+        </div>
+
+        {% if passwords_visible %}
+        <div class="bg-white shadow rounded p-4">
+            <h2 class="text-sm uppercase text-gray-500 mb-3">VPS Management</h2>
+            <dl class="text-sm space-y-1">
+                <div><dt class="text-gray-500 inline">URL: </dt><dd class="inline">{{ server.vps_management_url or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Логин: </dt><dd class="inline">{{ server.mgt_login or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Пароль: </dt><dd class="inline font-mono">{{ server.mgt_pass or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Website: </dt><dd class="inline">{{ server.website or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Web login: </dt><dd class="inline">{{ server.web_login or '—' }}</dd></div>
+                <div><dt class="text-gray-500 inline">Web pass: </dt><dd class="inline font-mono">{{ server.web_pass or '—' }}</dd></div>
+            </dl>
+        </div>
+        {% endif %}
+
+        <div class="bg-white shadow rounded p-4 md:col-span-2">
+            <h2 class="text-sm uppercase text-gray-500 mb-3">Домены ({{ domains|length }})</h2>
+            {% if domains %}
+            <ul class="text-sm space-y-1">
+                {% for d in domains %}
+                <li class="flex items-center justify-between">
+                    <span class="font-mono">{{ d.domain }}</span>
+                    <button hx-post="{{ url_for('servers.delete_domain', domain_id=d.id) }}"
+                            hx-target="closest li" hx-swap="outerHTML"
+                            hx-confirm="Удалить домен?"
+                            class="text-red-500 hover:text-red-700 text-xs">×</button>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-400">Нет доменов</p>
+            {% endif %}
+            <form hx-post="{{ url_for('servers.add_domain', server_id=server.id) }}"
+                  hx-target="this" hx-swap="beforebegin" class="mt-3 flex gap-2">
+                <input type="text" name="domain" placeholder="example.com"
+                       class="px-2 py-1 border border-gray-300 rounded text-sm flex-1 font-mono">
+                <button type="submit" class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Добавить</button>
+            </form>
+        </div>
+
+        <div class="bg-white shadow rounded p-4 md:col-span-2">
+            <h2 class="text-sm uppercase text-gray-500 mb-3">Комментарии</h2>
+            <p class="text-sm whitespace-pre-wrap">{{ server.notes or '—' }}</p>
+        </div>
+    </div>
+
+    <div class="mt-6 flex gap-3">
+        <a href="{{ url_for('servers.edit', server_id=server.id) }}"
+           class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded">Редактировать</a>
+        <button hx-post="{{ url_for('servers.delete', server_id=server.id) }}"
+                hx-confirm="Удалить сервер «{{ server.name }}»?"
+                hx-redirect="{{ url_for('servers.list_servers') }}"
+                class="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium px-4 py-2 rounded">Удалить</button>
+    </div>
+</div>
+{% endblock %}

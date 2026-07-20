@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}403 — Доступ запрещён{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-16 text-center">
+    <h1 class="text-6xl font-bold text-red-500">403</h1>
+    <p class="mt-4 text-gray-600">У вас нет доступа к этому ресурсу.</p>
+    <a href="{{ url_for('servers.list_servers') }}" class="mt-6 inline-block text-blue-600 hover:text-blue-800">← На главную</a>
+</div>
+{% endblock %}

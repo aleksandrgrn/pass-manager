@@ -1,0 +1,13 @@
+{# Re-render a single cell after inline edit. Used by edit_field() view. #}
+{# Expects: server, field, value, passwords_visible #}
+{% set is_password_field = 'password' in field or 'pass' in field %}
+{% set editable = not is_password_field or passwords_visible %}
+{% if editable %}
+<div data-inline-edit="{{ field }}" data-server-id="{{ server.id }}"
+     class="cursor-text {% if is_password_field %}font-mono text-xs{% endif %}"
+     title="Двойной клик для редактирования">
+    {{ value or '—' }}
+</div>
+{% else %}
+<span class="text-gray-400">—</span>
+{% endif %}

@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-from app.extensions import db
+from app.extensions import db, login_manager
 from app.models import User
 from app.forms import LoginForm
 from app.auth.ldap_auth import authenticate_ldap
@@ -20,7 +20,7 @@ def login():
         username = form.username.data.strip()
         password = form.password.data
 
-        # Try LDAP first
+        # Try LDAP first (if configured)
         ldap_result = None
         if current_app.config.get('LDAP_SERVER'):
             ldap_result = authenticate_ldap(username, password, current_app)
@@ -37,18 +37,14 @@ def login():
             next_page = request.args.get('next')
             return redirect(next_page or url_for('servers.list_servers'))
 
-        # Fallback: local admin
-        local_admin_user = User.query.filter_by(
-            username=current_app.config.get('LOCAL_ADMIN_USERNAME', 'admin'),
-            is_local=True
-        ).first()
-
-        if local_admin_user and local_admin_user.check_password(password):
-            if not local_admin_user.is_active:
+        # Fallback: any local user (admin, manually seeded users)
+        local_user = User.query.filter_by(username=username, is_local=True).first()
+        if local_user and local_user.check_password(password):
+            if not local_user.is_active:
                 flash('Учётная запись отключена.', 'error')
                 return render_template('auth/login.html', form=form)
-            login_user(local_admin_user)
-            flash(f'Вход выполнен как {local_admin_user.username} (local admin)', 'success')
+            login_user(local_user)
+            flash(f'Вход выполнен как {local_user.username} (local, role={local_user.role})', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('servers.list_servers'))
 
@@ -86,15 +82,3 @@ def _get_or_create_user(username, display_name=None, role='pass-user', is_local=
         db.session.add(user)
         db.session.commit()
     return user
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    """Load user by ID for Flask-Login."""
-    return db.session.get(User, int(user_id))
-
-
-@login_manager.unauthorized_handler
-def unauthorized():
-    """Redirect unauthorized users to login page."""
-    return redirect(url_for('auth.login'))

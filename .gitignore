@@ -32,3 +32,19 @@ snapshots/
 /TEAM.md
 /CHAIN.md
 /TASKS.md
+
+# Python venv
+venv/
+.venv/
+env/
+
+# Instance data (SQLite DB, local runtime files)
+instance/
+
+# Logs
+logs/
+*.log
+
+# SQLite databases (paranoia — never commit data)
+*.db
+*.db-journal

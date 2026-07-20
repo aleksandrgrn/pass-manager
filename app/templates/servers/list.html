@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Серверы — Pass Manager{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-xl font-semibold text-gray-800">Серверы <span class="text-gray-400 text-sm font-normal">({{ pagination.total }})</span></h1>
+        <a href="{{ url_for('servers.create') }}"
+           class="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded">
+            + Добавить сервер
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" action="{{ url_for('servers.list_servers') }}" class="flex flex-wrap items-center gap-3">
+        {{ filter_form.q(class_='px-3 py-2 border border-gray-300 rounded text-sm', placeholder='Поиск по имени/IP/провайдеру', value=request.args.get('q','')) }}
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+            {{ filter_form.active(checked=request.args.get('active')=='y') }}
+            {{ filter_form.active.label.text }}
+        </label>
+        <input type="hidden" name="sort" value="{{ sort }}">
+        <input type="hidden" name="dir" value="{{ direction }}">
+        <button type="submit" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm rounded">Применить</button>
+        <a href="{{ url_for('servers.list_servers') }}" class="text-sm text-gray-500 hover:text-gray-700">Сбросить</a>
+    </form>
+
+    <!-- Table -->
+    <div class="bg-white shadow overflow-x-auto rounded-lg">
+        <table class="min-w-full text-sm text-left text-gray-700">
+            <thead class="bg-gray-100 text-xs uppercase text-gray-500">
+                <tr>
+                    {% set next_dir = 'desc' if direction == 'asc' else 'asc' %}
+                    {% set arrow = '↓' if direction == 'asc' else '↑' %}
+                    <th class="px-3 py-2">
+                        <a href="?sort=id&dir={{ next_dir }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}{% if request.args.get('active') %}&active=y{% endif %}"
+                           class="{% if sort=='id' %}text-blue-700 font-semibold{% endif %}">ID {% if sort=='id' %}{{ arrow }}{% endif %}</a>
+                    </th>
+                    <th class="px-3 py-2"><a href="?sort=name&dir={{ next_dir }}"
+                           class="{% if sort=='name' %}text-blue-700 font-semibold{% endif %}">Название {% if sort=='name' %}{{ arrow }}{% endif %}</a></th>
+                    {% if passwords_visible %}
+                    <th class="px-3 py-2">Пароль</th>
+                    {% endif %}
+                    <th class="px-3 py-2"><a href="?sort=ip_address&dir={{ next_dir }}"
+                           class="{% if sort=='ip_address' %}text-blue-700 font-semibold{% endif %}">IP {% if sort=='ip_address' %}{{ arrow }}{% endif %}</a></th>
+                    <th class="px-3 py-2"><a href="?sort=provider&dir={{ next_dir }}"
+                           class="{% if sort=='provider' %}text-blue-700 font-semibold{% endif %}">Провайдер {% if sort=='provider' %}{{ arrow }}{% endif %}</a></th>
+                    <th class="px-3 py-2">Логин</th>
+                    {% if passwords_visible %}
+                    <th class="px-3 py-2">Пароль (пров.)</th>
+                    {% endif %}
+                    <th class="px-3 py-2">Домены</th>
+                    <th class="px-3 py-2 text-center"><a href="?sort=has_exim&dir={{ next_dir }}">exim</a></th>
+                    <th class="px-3 py-2 text-center"><a href="?sort=has_squid&dir={{ next_dir }}">squid</a></th>
+                    <th class="px-3 py-2 text-center"><a href="?sort=has_vpn&dir={{ next_dir }}">vpn</a></th>
+                    <th class="px-3 py-2">Комментарии</th>
+                    <th class="px-3 py-2 text-center">Действия</th>
+                </tr>
+            </thead>
+            <tbody id="servers-tbody">
+                {% for server in servers %}
+                {% include 'servers/_row.html' %}
+                {% else %}
+                <tr>
+                    <td colspan="13" class="px-3 py-6 text-center text-gray-400">Нет записей</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.pages > 1 %}
+    <nav class="flex justify-center gap-1 text-sm">
+        {% for p in range(1, pagination.pages + 1) %}
+        <a href="?page={{ p }}&sort={{ sort }}&dir={{ direction }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}{% if request.args.get('active') %}&active=y{% endif %}"
+           class="px-3 py-1 rounded border
+           {% if p == pagination.page %}bg-blue-600 text-white border-blue-600{% else %}bg-white text-gray-700 hover:bg-gray-100{% endif %}">{{ p }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}
