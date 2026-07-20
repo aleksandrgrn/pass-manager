@@ -48,3 +48,8 @@ logs/
 # SQLite databases (paranoia — never commit data)
 *.db
 *.db-journal
+
+# Test/coverage artifacts
+.coverage
+.pytest_cache/
+htmlcov/

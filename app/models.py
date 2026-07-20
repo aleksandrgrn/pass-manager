@@ -1,6 +1,9 @@
 from flask_login import UserMixin
+from sqlalchemy.ext.hybrid import hybrid_property
 from werkzeug.security import generate_password_hash, check_password_hash
+
 from app.extensions import db
+from app.security import decrypt, encrypt
 
 
 class User(UserMixin, db.Model):
@@ -46,11 +49,17 @@ class Server(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(256), nullable=False, index=True)
-    password = db.Column(db.String(512), nullable=True)
+
+    # Зашифрованные Fernet-секреты. Реальные колонки хранят токены,
+    # публичные hybrid-свойства ниже прозрачно шифруют/расшифровывают.
+    password_encrypted = db.Column('password_encrypted', db.Text, nullable=True)
+    provider_password_encrypted = db.Column('provider_password_encrypted', db.Text, nullable=True)
+    web_pass_encrypted = db.Column('web_pass_encrypted', db.Text, nullable=True)
+    mgt_pass_encrypted = db.Column('mgt_pass_encrypted', db.Text, nullable=True)
+
     ip_address = db.Column(db.String(45), nullable=True, index=True)
     provider = db.Column(db.String(256), nullable=True)
     provider_login = db.Column(db.String(256), nullable=True)
-    provider_password = db.Column(db.String(512), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     os = db.Column(db.String(128), nullable=True)
@@ -63,14 +72,52 @@ class Server(db.Model):
     # VPS management panel
     website = db.Column(db.String(512), nullable=True)
     web_login = db.Column(db.String(256), nullable=True)
-    web_pass = db.Column(db.String(512), nullable=True)
     vps_management_url = db.Column(db.String(512), nullable=True)
     mgt_login = db.Column(db.String(256), nullable=True)
-    mgt_pass = db.Column(db.String(512), nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
     domains = db.relationship('Domain', backref='server', lazy='dynamic', cascade='all, delete-orphan')
+
+    # --- Hybrid properties: прозрачное шифрование паролей ---
+
+    @hybrid_property
+    def password(self):
+        """Root-пароль сервера (расшифровывается при чтении)."""
+        return decrypt(self.password_encrypted) if self.password_encrypted else None
+
+    @password.setter
+    def password(self, value):
+        self.password_encrypted = encrypt(value) if value else None
+
+    @hybrid_property
+    def provider_password(self):
+        """Пароль провайдера."""
+        return decrypt(self.provider_password_encrypted) if self.provider_password_encrypted else None
+
+    @provider_password.setter
+    def provider_password(self, value):
+        self.provider_password_encrypted = encrypt(value) if value else None
+
+    @hybrid_property
+    def web_pass(self):
+        """Пароль панели управления VPS."""
+        return decrypt(self.web_pass_encrypted) if self.web_pass_encrypted else None
+
+    @web_pass.setter
+    def web_pass(self, value):
+        self.web_pass_encrypted = encrypt(value) if value else None
+
+    @hybrid_property
+    def mgt_pass(self):
+        """Management-пароль."""
+        return decrypt(self.mgt_pass_encrypted) if self.mgt_pass_encrypted else None
+
+    @mgt_pass.setter
+    def mgt_pass(self, value):
+        self.mgt_pass_encrypted = encrypt(value) if value else None
+
+    # --- Служебные свойства ---
 
     @property
     def services_list(self):

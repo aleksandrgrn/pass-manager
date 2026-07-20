@@ -45,7 +45,15 @@ class Config:
     """Base configuration."""
     SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(32).hex())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
+
+    # Шифрование паролей в БД (Fernet). Сгенерировать:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
+
+    # Безопасность сессий и форм
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 час (в секундах)
+    WTF_CSRF_TIME_LIMIT = 3600  # CSRF-токен живёт 1 час
+
     # LDAP
     LDAP_SERVER = os.environ.get('LDAP_SERVER', '')
     LDAP_PORT = int(os.environ.get('LDAP_PORT', 389))
@@ -81,6 +89,10 @@ class DevConfig(Config):
         os.environ.get('DATABASE_URL'),
         'pass_manager_dev.db'
     )
+    # В dev cookie может передаваться по HTTP (localhost)
+    SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
 
 class ProdConfig(Config):
@@ -90,6 +102,10 @@ class ProdConfig(Config):
         os.environ.get('DATABASE_URL'),
         'pass_manager.db'
     )
+    # В prod cookie всегда только по HTTPS, независимо от FLASK_ENV
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
 
 config = {

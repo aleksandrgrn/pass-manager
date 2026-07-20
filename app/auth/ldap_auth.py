@@ -1,9 +1,15 @@
 """LDAP authentication module."""
 import logging
+import socket
 from ldap3 import Server, Connection, ALL, SUBTREE, Tls
+from ldap3.core.exceptions import LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError
 import ssl
 
 logger = logging.getLogger(__name__)
+
+# Таймаут на любые LDAP-операции (в секундах).
+# Если AD «висит», login не будет висеть дольше этого значения.
+LDAP_RECEIVE_TIMEOUT = 10
 
 
 def authenticate_ldap(username, password, app):
@@ -12,7 +18,7 @@ def authenticate_ldap(username, password, app):
     
     Returns:
         dict with keys: authenticated (bool), user_info (dict), role (str)
-        or None if authentication fails.
+        or None if authentication fails (включая таймаут).
     """
     ldap_server = app.config.get('LDAP_SERVER')
     ldap_port = app.config.get('LDAP_PORT', 389)
@@ -31,13 +37,30 @@ def authenticate_ldap(username, password, app):
         # Build server connection
         if ldap_use_ssl:
             tls_config = Tls(validate=ssl.CERT_NONE)
-            server = Server(ldap_server, port=ldap_port, use_ssl=True, tls=tls_config)
+            server = Server(
+                ldap_server,
+                port=ldap_port,
+                use_ssl=True,
+                tls=tls_config,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
         else:
-            server = Server(ldap_server, port=ldap_port, use_ssl=False)
+            server = Server(
+                ldap_server,
+                port=ldap_port,
+                use_ssl=False,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
 
         # First bind with service account to search for user
         if ldap_bind_dn:
-            bind_conn = Connection(server, user=ldap_bind_dn, password=ldap_bind_password, auto_bind=True)
+            bind_conn = Connection(
+                server,
+                user=ldap_bind_dn,
+                password=ldap_bind_password,
+                auto_bind=True,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
             
             # Search for user
             search_filter = ldap_user_search_filter.format(username=username)
@@ -63,7 +86,13 @@ def authenticate_ldap(username, password, app):
             bind_conn.unbind()
             
             # Now try to bind as the user to verify password
-            user_conn = Connection(server, user=user_dn, password=password, auto_bind=True)
+            user_conn = Connection(
+                server,
+                user=user_dn,
+                password=password,
+                auto_bind=True,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
             user_conn.unbind()
             
             # Determine role from group membership
@@ -81,7 +110,13 @@ def authenticate_ldap(username, password, app):
         else:
             # No bind DN — try direct bind with username
             user_dn = f'{username}@{ldap_base_dn}' if ldap_base_dn else username
-            user_conn = Connection(server, user=user_dn, password=password, auto_bind=True)
+            user_conn = Connection(
+                server,
+                user=user_dn,
+                password=password,
+                auto_bind=True,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
             user_conn.unbind()
             
             return {
@@ -93,6 +128,16 @@ def authenticate_ldap(username, password, app):
                 'role': 'pass-user',
             }
 
+    except (LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError, socket.timeout) as e:
+        # Таймаут LDAP — не валимся с 500, просто считаем попытку неудачной.
+        # ldap3 не имеет единого «LDAPSocketTimeoutError»: таймауты приходят как
+        # LDAPResponseTimeoutError (превышён receive_timeout) или как
+        # LDAPSocketReceiveError/SendError, оборачивающие socket.timeout.
+        logger.warning(
+            'LDAP timeout для пользователя %s при обращении к %s:%s (%s)',
+            username, ldap_server, ldap_port, e,
+        )
+        return None
     except Exception as e:
         logger.error(f'LDAP authentication error for {username}: {e}')
         return None
