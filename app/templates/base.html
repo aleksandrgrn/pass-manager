@@ -1,39 +1,230 @@
 <!DOCTYPE html>
-<html lang="ru" class="h-full bg-gray-50">
+<html lang="ru" class="h-full bg-bg text-ink">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>{% block title %}Pass Manager{% endblock %}</title>
     <!-- Tailwind CSS (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { theme: { extend: { colors: {
+        bg:'var(--bg)', surface:'var(--surface)', surface2:'var(--surface-2)',
+        line:'var(--line)', ink:'var(--ink)', muted:'var(--muted)', faint:'var(--faint)',
+        accent:'var(--accent)', accenth:'var(--accent-h)', accentfg:'var(--accent-fg)', accentweak:'var(--accent-weak)',
+        success:'var(--success)', successweak:'var(--success-weak)',
+        danger:'var(--danger)', dangerweak:'var(--danger-weak)',
+        warning:'var(--warning)', warningweak:'var(--warning-weak)'
+      }}}};
+    </script>
+    <style>
+      :root{
+        color-scheme: light dark;
+        --bg:        light-dark(#fafafa, #09090b);
+        --surface:   light-dark(#ffffff, #18181b);
+        --surface-2: light-dark(#f4f4f5, #27272a);
+        --line:      light-dark(#e4e4e7, #27272a);
+        --ink:       light-dark(#18181b, #fafafa);
+        --muted:     light-dark(#52525b, #a1a1aa);
+        --faint:     light-dark(#71717a, #71717a);
+        --accent:      light-dark(#2563eb, #3b82f6);
+        --accent-h:    light-dark(#1d4ed8, #60a5fa);
+        --accent-fg:   #ffffff;
+        --accent-weak: light-dark(#eff6ff, rgba(59,130,246,.16));
+        --success:      light-dark(#059669, #34d399);
+        --success-weak: light-dark(#d1fae5, rgba(16,185,129,.15));
+        --danger:       light-dark(#e11d48, #fb7185);
+        --danger-weak:  light-dark(#ffe4e6, rgba(244,63,94,.15));
+        --warning:      light-dark(#d97706, #fbbf24);
+        --warning-weak: light-dark(#fef3c7, rgba(217,119,6,.15));
+        --nav-bg:    light-dark(#1f2937, #000000);
+        --nav-fg:    #f9fafb;
+        --nav-muted: #9ca3af;
+      }
+      :root[data-theme="light"]{ color-scheme: light; }
+      :root[data-theme="dark"] { color-scheme: dark; }
+
+      /* ---- Компоненты (порт из palette-preview.html) ---- */
+
+      /* Кнопки */
+      .btn {
+        appearance: none; font-family: inherit; font-size: 13px; font-weight: 500;
+        padding: 8px 14px; border-radius: 6px; border: 1px solid transparent; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 6px;
+        transition: background .15s, color .15s, border-color .15s, transform .08s, box-shadow .15s;
+      }
+      .btn svg { width: 14px; height: 14px; }
+      .btn:active { transform: scale(.97); }
+      .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .btn.primary   { background: var(--accent); color: var(--accent-fg);
+                       box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.04); }
+      .btn.primary:hover   { background: var(--accent-h); }
+      .btn.secondary { background: var(--surface); border-color: var(--line); color: var(--ink); }
+      .btn.secondary:hover { background: var(--surface-2); }
+      .btn.ghost     { background: transparent; color: var(--muted); }
+      .btn.ghost:hover     { background: var(--surface-2); color: var(--ink); }
+      .btn.danger    { background: var(--danger-weak); color: var(--danger); }
+      .btn.danger:hover    { background: var(--danger); color: #fff; }
+
+      /* Иконки-кнопки (32px — компромисс под плотность таблицы) */
+      .icon-btn {
+        appearance: none; border: 1px solid transparent; background: transparent;
+        width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 6px; cursor: pointer; color: var(--muted);
+        transition: background .15s, color .15s, border-color .15s;
+      }
+      .icon-btn svg { width: 16px; height: 16px; }
+      .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+      .icon-btn.danger:hover { background: var(--danger-weak); color: var(--danger); }
+      .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .row-actions { display: inline-flex; gap: 4px; align-items: center; justify-content: center; }
+
+      /* Пилюли статусов */
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px;
+              font-size: 11px; font-weight: 500; line-height: 1.4; }
+      .pill.on  { background: var(--success-weak); color: var(--success); }
+      .pill.off { background: var(--surface-2); color: var(--faint); }
+
+      /* Таблица */
+      .table-wrap { background: var(--surface); border: 1px solid var(--line);
+                    border-radius: 10px; overflow-x: auto; }
+      table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.tbl thead th {
+        position: sticky; top: 0; z-index: 10; background: var(--surface-2); color: var(--muted);
+        font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+        padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap;
+      }
+      table.tbl thead th a { color: inherit; }
+      table.tbl thead th a.sort-active { color: var(--accent); font-weight: 600; }
+      /* color НЕ задаём — наследуется от text-ink на <html>, чтобы per-cell цвета (.cell-num, text-muted) не перебивались */
+      table.tbl tbody td { padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+      table.tbl .icon-btn { width: 28px; height: 28px; }
+      table.tbl tbody tr:last-child td { border-bottom: 0; }
+      table.tbl tbody tr:hover { background: var(--accent-weak); }
+      .cell-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+      .cell-num  { font-family: ui-monospace, Menlo, Consolas, monospace;
+                   font-variant-numeric: tabular-nums; color: var(--muted); }
+
+      /* ---- Navbar (тёмная верхняя полоса, Фаза 3) ---- */
+      .navbar { background: var(--nav-bg); color: var(--nav-fg);
+                border-bottom: 1px solid rgba(255,255,255,.06); }
+      .navbar .nav-brand { color: var(--nav-fg); }
+      .navbar .nav-sep   { color: rgba(255,255,255,.18); }
+      .navbar .nav-link  { color: var(--nav-muted); transition: color .15s; }
+      .navbar .nav-link:hover { color: var(--nav-fg); }
+      .navbar .nav-user  { color: var(--nav-muted); }
+      .navbar .nav-role  { color: rgba(255,255,255,.45); }
+      .navbar .icon-btn        { color: var(--nav-muted); }
+      .navbar .icon-btn:hover  { background: rgba(255,255,255,.08); color: var(--nav-fg); }
+
+      /* ---- Карточки и формы (Фаза 3) ---- */
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+
+      .field {
+        width: 100%; padding: 8px 12px; font-size: 14px;
+        background: var(--surface); color: var(--ink);
+        border: 1px solid var(--line); border-radius: 6px;
+        transition: border-color .15s, box-shadow .15s;
+      }
+      .field::placeholder { color: var(--faint); }
+      .field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+
+      .field-label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
+
+      input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+    </style>
+    <script>
+      // Anti-FOUC: apply saved theme before first paint
+      (function(){
+        var t = localStorage.getItem('pm-theme');
+        if(t==='light'||t==='dark'){
+          document.documentElement.setAttribute('data-theme', t);
+          var m = document.querySelector('meta[name="color-scheme"]');
+          if(m) m.setAttribute('content', t);
+        }
+      })();
+    </script>
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <!-- CSRF token for HTMX requests -->
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script>
-        document.body.addEventListener('htmx:configRequest', (event) => {
+        document.addEventListener('htmx:configRequest', (event) => {
             event.detail.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]').content;
         });
-        // Inline edit helper: click on a cell turns it into an input
-        document.addEventListener('click', (e) => {
-            const cell = e.target.closest('[data-inline-edit]');
-            if (!cell || cell.dataset.editing === '1') return;
-            e.preventDefault();
+        // Ячейка: одиночный клик = копировать, двойной клик = редактировать
+        function enterInlineEdit(cell) {
+            if (cell.dataset.editing === '1') return;
             const field = cell.dataset.inlineEdit;
             const serverId = cell.dataset.serverId;
             const current = cell.textContent.trim();
             cell.dataset.editing = '1';
-            cell.innerHTML = `<form hx-post="/servers/${serverId}/field" hx-target="this" hx-swap="outerHTML"
+            cell.innerHTML = `<form hx-post="/servers/${serverId}/field" hx-target="closest [data-inline-edit]" hx-swap="outerHTML"
                 class="inline-flex w-full">
                 <input type="hidden" name="field" value="${field}">
                 <input type="text" name="value" value="${current.replace(/"/g, '&quot;')}"
-                    class="w-full px-1 py-0.5 border border-blue-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    class="w-full px-1 py-0.5 border border-accent rounded text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
                     autofocus>
             </form>`;
+            if (window.htmx) htmx.process(cell);
             const input = cell.querySelector('input[type="text"]');
-            if (input) {
-                input.focus();
-                input.select();
+            if (input) { input.focus(); input.select(); }
+        }
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+        }
+        function copyToClipboard(text) {
+            // HTTP (не secure context) → navigator.clipboard недоступен, фолбэк на execCommand
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+            } else {
+                fallbackCopy(text);
+            }
+        }
+        function showCopiedToast() {
+            let t = document.getElementById('copy-toast');
+            if (!t) {
+                t = document.createElement('div');
+                t.id = 'copy-toast';
+                t.textContent = 'Скопировано';
+                t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+                    'background:var(--ink);color:var(--surface);padding:6px 16px;border-radius:8px;' +
+                    'font-size:13px;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;' +
+                    'box-shadow:0 4px 12px rgba(0,0,0,.18);';
+                document.body.appendChild(t);
+            }
+            t.style.opacity = '1';
+            clearTimeout(t._hide);
+            t._hide = setTimeout(() => { t.style.opacity = '0'; }, 1200);
+        }
+
+        let _cellClickTimer = null;
+        document.addEventListener('click', (e) => {
+            const cell = e.target.closest('[data-inline-edit]');
+            if (!cell || cell.dataset.editing === '1') return;
+            if (_cellClickTimer) { clearTimeout(_cellClickTimer); _cellClickTimer = null; return; }
+            const text = cell.textContent.trim();
+            _cellClickTimer = setTimeout(() => {
+                _cellClickTimer = null;
+                if (text && text !== '—') { copyToClipboard(text); showCopiedToast(); }
+            }, 220);
+        });
+        document.addEventListener('dblclick', (e) => {
+            const cell = e.target.closest('[data-inline-edit]');
+            if (!cell || cell.dataset.editing === '1') return;
+            e.preventDefault();
+            if (_cellClickTimer) { clearTimeout(_cellClickTimer); _cellClickTimer = null; }
+            enterInlineEdit(cell);
+        });
+        document.addEventListener('mouseover', (e) => {
+            const cell = e.target.closest('[data-inline-edit]');
+            if (cell && cell.dataset.editing !== '1') {
+                cell.title = 'Клик — копировать · двойной клик — редактировать';
             }
         });
     </script>
@@ -41,39 +232,43 @@
         [x-cloak] { display: none; }
     </style>
 </head>
-<body class="h-full">
+<body class="h-full antialiased">
 <div class="min-h-full flex flex-col">
-    <nav class="bg-gray-800 text-white shadow">
-        <div class="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between">
+    <nav class="navbar">
+        <div class="w-full px-4 h-14 flex items-center justify-between">
             <div class="flex items-center space-x-4">
-                <a href="{{ url_for('servers.list_servers') }}" class="text-lg font-semibold">Pass Manager</a>
+                <a href="{{ url_for('servers.list_servers') }}" class="nav-brand text-lg font-semibold">Pass Manager</a>
                 {% if current_user.is_authenticated %}
-                <span class="text-gray-400 text-sm hidden sm:inline">|</span>
-                <a href="{{ url_for('servers.list_servers') }}" class="text-sm hover:text-gray-300 hidden sm:inline">Серверы</a>
+                <span class="nav-sep text-sm hidden sm:inline">|</span>
+                <a href="{{ url_for('servers.list_servers') }}" class="nav-link text-sm hidden sm:inline">Серверы</a>
                 {% endif %}
             </div>
             <div class="flex items-center space-x-4 text-sm">
                 {% if current_user.is_authenticated %}
-                <span class="text-gray-300">
+                <span class="nav-user">
                     {{ current_user.display_name or current_user.username }}
-                    <span class="ml-1 text-xs text-gray-500 uppercase tracking-wide">{{ current_user.role }}</span>
                 </span>
-                <a href="{{ url_for('auth.logout') }}" class="hover:text-gray-300">Выйти</a>
+                <button id="theme-toggle" type="button" aria-label="Переключить тему" class="icon-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36-.7-.7M6.34 6.34l-.7-.7m12.72 0-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/>
+                    </svg>
+                </button>
+                <a href="{{ url_for('auth.logout') }}" class="nav-link">Выйти</a>
                 {% endif %}
             </div>
         </div>
     </nav>
 
-    <main class="flex-1 max-w-screen-2xl w-full mx-auto px-4 py-6">
+    <main class="flex-1 w-full px-4 py-6">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
         <div class="mb-4 space-y-1">
             {% for category, message in messages %}
-            <div class="px-4 py-2 rounded text-sm
-                {% if category == 'error' %}bg-red-100 text-red-800 border border-red-300
-                {% elif category == 'success' %}bg-green-100 text-green-800 border border-green-300
-                {% elif category == 'warning' %}bg-yellow-100 text-yellow-800 border border-yellow-300
-                {% else %}bg-blue-100 text-blue-800 border border-blue-300{% endif %}">
+            <div data-flash="{{ category }}" class="px-4 py-2 rounded text-sm transition-opacity duration-500
+                {% if category == 'error' %}bg-dangerweak text-danger border border-danger/30
+                {% elif category == 'success' %}bg-successweak text-success border border-success/30
+                {% elif category == 'warning' %}bg-warningweak text-warning border border-warning/30
+                {% else %}bg-accentweak text-accent border border-accent/30{% endif %}">
                 {{ message }}
             </div>
             {% endfor %}
@@ -83,10 +278,25 @@
 
         {% block content %}{% endblock %}
     </main>
-
-    <footer class="bg-gray-100 border-t text-center text-xs text-gray-500 py-3">
-        Pass Manager · Flask + HTMX · {{ current_user.username if current_user.is_authenticated else 'guest' }}
-    </footer>
 </div>
+<script>
+  var tt = document.getElementById('theme-toggle');
+  if (tt) tt.addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var eff = cur || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var next = eff === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    document.querySelector('meta[name="color-scheme"]').setAttribute('content', next);
+    localStorage.setItem('pm-theme', next);
+  });
+</script>
+<script>
+  setTimeout(function(){
+    document.querySelectorAll('[data-flash="success"],[data-flash="info"]').forEach(function(el){
+      el.style.opacity = '0';
+      setTimeout(function(){ el.remove(); }, 500);
+    });
+  }, 4000);
+</script>
 </body>
 </html>

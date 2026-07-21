@@ -1,52 +1,52 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto bg-white shadow-md rounded-lg p-8">
-    <h1 class="text-xl font-semibold mb-6 text-gray-800">{{ title }}</h1>
+<div class="max-w-3xl mx-auto card p-8">
+    <h1 class="text-xl font-semibold mb-6 text-ink">{{ title }}</h1>
     <form method="POST">
         {{ form.csrf_token }}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                {{ form.name.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.name(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded', placeholder='web-prod-01') }}
-                {% for err in form.name.errors %}<p class="text-red-600 text-xs">{{ err }}</p>{% endfor %}
+                {{ form.name.label(class_='field-label') }}
+                {{ form.name(class_='field mt-1', placeholder='web-prod-01') }}
+                {% for err in form.name.errors %}<p class="text-danger text-xs">{{ err }}</p>{% endfor %}
             </div>
             <div>
-                {{ form.ip_address.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.ip_address(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded font-mono text-sm', placeholder='192.168.1.10') }}
+                {{ form.ip_address.label(class_='field-label') }}
+                {{ form.ip_address(class_='field mt-1 font-mono', placeholder='192.168.1.10') }}
             </div>
             <div>
-                {{ form.password.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.password(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded font-mono text-sm', autocomplete='new-password') }}
+                {{ form.password.label(class_='field-label') }}
+                {{ form.password(class_='field mt-1 font-mono', autocomplete='new-password') }}
             </div>
             <div>
-                {{ form.provider.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.provider(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded') }}
+                {{ form.provider.label(class_='field-label') }}
+                {{ form.provider(class_='field mt-1') }}
             </div>
             <div>
-                {{ form.provider_login.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.provider_login(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded') }}
+                {{ form.provider_login.label(class_='field-label') }}
+                {{ form.provider_login(class_='field mt-1') }}
             </div>
             <div>
-                {{ form.provider_password.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.provider_password(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded font-mono text-sm') }}
+                {{ form.provider_password.label(class_='field-label') }}
+                {{ form.provider_password(class_='field mt-1 font-mono') }}
             </div>
             <div class="md:col-span-2">
-                {{ form.notes.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.notes(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded', rows=2) }}
+                {{ form.notes.label(class_='field-label') }}
+                {{ form.notes(class_='field mt-1', rows=2) }}
             </div>
             <div>
-                {{ form.os.label(class_='block text-sm font-medium text-gray-700') }}
-                {{ form.os(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded') }}
+                {{ form.os.label(class_='field-label') }}
+                {{ form.os(class_='field mt-1') }}
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    {{ form.cpu.label(class_='block text-sm font-medium text-gray-700') }}
-                    {{ form.cpu(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded') }}
+                    {{ form.cpu.label(class_='field-label') }}
+                    {{ form.cpu(class_='field mt-1') }}
                 </div>
                 <div>
-                    {{ form.ram.label(class_='block text-sm font-medium text-gray-700') }}
-                    {{ form.ram(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded') }}
+                    {{ form.ram.label(class_='field-label') }}
+                    {{ form.ram(class_='field mt-1') }}
                 </div>
             </div>
             <div class="md:col-span-2 flex gap-6">
@@ -57,21 +57,21 @@
             </div>
         </div>
 
-        <details class="mt-6 border-t pt-4">
-            <summary class="cursor-pointer text-sm text-gray-600">VPS management panel</summary>
+        <details class="mt-6 border-t border-line pt-4">
+            <summary class="cursor-pointer text-sm text-muted">VPS management panel</summary>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                <div>{{ form.website.label(class_='block text-xs text-gray-600') }}{{ form.website(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm') }}</div>
-                <div>{{ form.web_login.label(class_='block text-xs text-gray-600') }}{{ form.web_login(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm') }}</div>
-                <div>{{ form.web_pass.label(class_='block text-xs text-gray-600') }}{{ form.web_pass(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm font-mono') }}</div>
-                <div>{{ form.vps_management_url.label(class_='block text-xs text-gray-600') }}{{ form.vps_management_url(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm') }}</div>
-                <div>{{ form.mgt_login.label(class_='block text-xs text-gray-600') }}{{ form.mgt_login(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm') }}</div>
-                <div>{{ form.mgt_pass.label(class_='block text-xs text-gray-600') }}{{ form.mgt_pass(class_='mt-1 w-full px-3 py-2 border border-gray-300 rounded text-sm font-mono') }}</div>
+                <div>{{ form.website.label(class_='block text-xs text-muted') }}{{ form.website(class_='field mt-1 text-sm') }}</div>
+                <div>{{ form.web_login.label(class_='block text-xs text-muted') }}{{ form.web_login(class_='field mt-1 text-sm') }}</div>
+                <div>{{ form.web_pass.label(class_='block text-xs text-muted') }}{{ form.web_pass(class_='field mt-1 text-sm font-mono') }}</div>
+                <div>{{ form.vps_management_url.label(class_='block text-xs text-muted') }}{{ form.vps_management_url(class_='field mt-1 text-sm') }}</div>
+                <div>{{ form.mgt_login.label(class_='block text-xs text-muted') }}{{ form.mgt_login(class_='field mt-1 text-sm') }}</div>
+                <div>{{ form.mgt_pass.label(class_='block text-xs text-muted') }}{{ form.mgt_pass(class_='field mt-1 text-sm font-mono') }}</div>
             </div>
         </details>
 
         <div class="mt-8 flex items-center gap-3">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded">Сохранить</button>
-            <a href="{{ url_for('servers.list_servers') }}" class="text-gray-600 hover:text-gray-900 text-sm">Отмена</a>
+            <button type="submit" class="btn primary">Сохранить</button>
+            <a href="{{ url_for('servers.list_servers') }}" class="btn ghost">Отмена</a>
         </div>
     </form>
 </div>

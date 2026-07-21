@@ -2,21 +2,21 @@
 {% block title %}Вход — Pass Manager{% endblock %}
 {% block content %}
 <div class="max-w-md mx-auto mt-16">
-    <div class="bg-white shadow-md rounded-lg p-8">
-        <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Pass Manager</h1>
+    <div class="card p-8">
+        <h1 class="text-2xl font-bold mb-6 text-center text-ink">Вход</h1>
         <form method="POST" action="{{ url_for('auth.login') }}">
             {{ form.csrf_token }}
             <div class="mb-4">
-                {{ form.username.label(class_='block text-sm font-medium text-gray-700 mb-1') }}
-                {{ form.username(class_='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500', autocomplete='username', placeholder='Доменная учётная запись') }}
-                {% for err in form.username.errors %}<p class="text-red-600 text-xs mt-1">{{ err }}</p>{% endfor %}
+                {{ form.username.label(class_='field-label') }}
+                {{ form.username(class_='field', autocomplete='username', placeholder='Доменная учётная запись') }}
+                {% for err in form.username.errors %}<p class="text-danger text-xs mt-1">{{ err }}</p>{% endfor %}
             </div>
             <div class="mb-6">
-                {{ form.password.label(class_='block text-sm font-medium text-gray-700 mb-1') }}
-                {{ form.password(class_='w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500', type='password', autocomplete='current-password') }}
-                {% for err in form.password.errors %}<p class="text-red-600 text-xs mt-1">{{ err }}</p>{% endfor %}
+                {{ form.password.label(class_='field-label') }}
+                {{ form.password(class_='field', type='password', autocomplete='current-password') }}
+                {% for err in form.password.errors %}<p class="text-danger text-xs mt-1">{{ err }}</p>{% endfor %}
             </div>
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition">
+            <button type="submit" class="btn primary w-full justify-center">
                 Войти
             </button>
         </form>

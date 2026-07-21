@@ -2,6 +2,10 @@
 
 Веб-приложение для управления учётными данными серверов (замена старому PHP-одностраничнику `readme/vps2/`).
 
+![Pass Manager — список серверов](screenshots/servers-list.png)
+
+*Список серверов (демо-данные). Adaptive light/dark, инлайн-редактирование, HTMX.*
+
 ## Стек
 
 - **Backend:** Flask 3.1 + SQLAlchemy + Flask-Login + Flask-WTF
@@ -184,8 +188,10 @@ nginx -t && systemctl reload nginx
 
 ## Безопасность
 
-- Все пароли в SQLite хранятся в открытом виде (как и в legacy) — это осознанное решение
-  для первой фазы, поскольку pass-manager уже RBAC-защищён и работает за nginx + LDAP.
-- Шифрование на уровне столбцов можно добавить позже (Fernet, как в VPS Manager).
-- `.env` **никогда** не коммитить (см. `.gitignore`).
+- Секреты серверов (`password`, `provider_password`, `web_pass`, `mgt_pass`) шифруются
+  **Fernet** на уровне столбцов (колонки `*_encrypted`) через `encrypt()/decrypt()` из
+  `app/security.py`. Требуется `ENCRYPTION_KEY` в `.env` (см. `.env.example`).
+- Пароль локального admin хранится хешем (werkzeug `generate_password_hash`), не в открытом виде.
+- RBAC: `pass-user` не видит и не может редактировать поля паролей (см. таблицу ролей выше).
+- `.env` **никогда** не коммитить (см. `.gitignore`); БД (`instance/`) тоже вне git.
 - CSRF-токен встроен во все формы и прокидывается в HTMX-запросы.
