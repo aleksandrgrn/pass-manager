@@ -31,10 +31,13 @@ if TYPE_CHECKING:
 @pytest.fixture()
 def app() -> Flask:
     """Свежий Flask-приложение с тестовой in-memory SQLite."""
-    app = create_app('development')
+    # Используем 'testing' config — TESTING=True выставлен в самом классе,
+    # поэтому _validate_prod_secrets (вызывается внутри create_app) пропускается.
+    # Раньше использовался 'development' + поздний app.config.update(TESTING=True),
+    # но это вызывало RuntimeError на этапе create_app при пустом ENCRYPTION_KEY.
+    app = create_app('testing')
     # Тестовые переопределения
     app.config.update(
-        TESTING=True,
         SQLALCHEMY_DATABASE_URI='sqlite:///:memory:',
         WTF_CSRF_ENABLED=False,
         LDAP_SERVER='',            # отключаем LDAP → всегда local fallback

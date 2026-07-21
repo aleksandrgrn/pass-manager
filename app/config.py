@@ -108,8 +108,23 @@ class ProdConfig(Config):
     SESSION_COOKIE_SAMESITE = 'Lax'
 
 
+class TestingConfig(Config):
+    """Configuration for the pytest suite.
+
+    TESTING=True — это единственный легитимный bypass для
+    _validate_prod_secrets (см. app/__init__.py). Используется во всех тестах,
+    чтобы можно было поднимать app с пустым ENCRYPTION_KEY/слабым SECRET_KEY.
+    """
+    TESTING = True
+    DEBUG = False
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    WTF_CSRF_ENABLED = False
+    SESSION_COOKIE_SECURE = False
+
+
 config = {
     'development': DevConfig,
     'production': ProdConfig,
+    'testing': TestingConfig,
     'default': DevConfig,
 }

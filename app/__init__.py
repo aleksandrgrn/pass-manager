@@ -1,3 +1,5 @@
+import logging
+
 from flask import Flask
 from flask_migrate import Migrate
 
@@ -16,17 +18,32 @@ _INSECURE_SECRET_KEYS = frozenset({
 
 
 def _validate_prod_secrets(app: Flask) -> None:
-    """Fail-fast проверка критичных секретов в non-debug окружениях.
+    """Fail-fast проверка критичных секретов.
 
     B1/F-005: SECRET_KEY не должен быть placeholder или коротким.
     B8/F-013: ENCRYPTION_KEY должен быть задан (не no-op шифрование).
-    B9/F-014: SESSION_COOKIE_SECURE должен быть True в проде.
+    B9/F-014: SESSION_COOKIE_SECURE должен быть True в non-debug окружении.
 
-    В DEBUG/TESTING режиме проверка пропускается.
+    Testing bypass: только TESTING=True пропускает ВСЕ проверки.
+    DEBUG-режим больше не освобождает от SECRET_KEY/ENCRYPTION_KEY требований
+    (защита от случайного пром-деплоя на DevConfig).
     """
-    if app.debug or app.config.get('TESTING'):
+    # Единственный легитимный bypass — это pytest (TESTING=True).
+    if app.config.get('TESTING'):
         return
 
+    logger = logging.getLogger(__name__)
+
+    # Loud warning в DEBUG-режиме — defence in depth, чтобы пром-деплой
+    # на DevConfig был заметен в логах.
+    if app.debug:
+        logger.critical(
+            'pass-manager запущен в DEBUG-режиме. '
+            'Это допустимо только для локальной разработки. '
+            'В проде FLASK_CONFIG должен быть production.'
+        )
+
+    # B1/F-005: SECRET_KEY — проверяется ВСЕГДА кроме TESTING.
     sk = app.config.get('SECRET_KEY', '')
     if sk in _INSECURE_SECRET_KEYS or len(sk) < 32:
         raise RuntimeError(
@@ -34,6 +51,8 @@ def _validate_prod_secrets(app: Flask) -> None:
             'Сгенерируйте: python -c "import secrets; print(secrets.token_hex(32))"'
         )
 
+    # B8/F-013: ENCRYPTION_KEY — проверяется ВСЕГДА кроме TESTING.
+    # lazy import: избегает circular dependency app↔app.security
     from app.security import is_no_op_mode
     with app.app_context():
         if is_no_op_mode():
@@ -44,7 +63,9 @@ def _validate_prod_secrets(app: Flask) -> None:
                 'print(Fernet.generate_key().decode())"'
             )
 
-    if not app.config.get('SESSION_COOKIE_SECURE', False):
+    # B9/F-014: SESSION_COOKIE_SECURE — только в non-debug.
+    # В DEBUG-режиме (локальный dev) cookie может передаваться по HTTP.
+    if not app.debug and not app.config.get('SESSION_COOKIE_SECURE', False):
         raise RuntimeError(
             'SESSION_COOKIE_SECURE должен быть True в non-debug окружении'
         )
@@ -69,7 +90,8 @@ def create_app(config_name=None):
     Migrate(app, db)
 
     # B1/B8/B9/F-005/F-013/F-014: validate production secrets (fail-closed
-    # on misconfiguration). В DEBUG/TESTING проверка пропускается.
+    # on misconfiguration). Только TESTING=True пропускает проверки;
+    # DEBUG больше не освобождает от SECRET_KEY/ENCRYPTION_KEY требований.
     _validate_prod_secrets(app)
 
     # B4/B11: ProxyFix — nginx передаёт X-Forwarded-For; без него

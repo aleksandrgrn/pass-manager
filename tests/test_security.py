@@ -85,7 +85,9 @@ class TestRealFernetEncryption:
         from app import create_app
 
         key = Fernet.generate_key().decode()
-        app = create_app('development')
+        # 'testing' config уже имеет TESTING=True (bypass для prod-secrets),
+        # но здесь мы задаём реальный ENCRYPTION_KEY, чтобы проверить Fernet.
+        app = create_app('testing')
         app.config.update(
             SQLALCHEMY_DATABASE_URI=f'sqlite:///{tmp_path}/fernet.db',
             WTF_CSRF_ENABLED=False,

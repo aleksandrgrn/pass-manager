@@ -46,18 +46,19 @@ def is_strict_mode() -> bool:
     """True, если приложение работает в strict/production-режиме.
 
     В strict-режиме отсутствие ENCRYPTION_KEY = RuntimeError (fail-closed).
-    В dev-режиме — no-op (fail-open для локальной разработки).
+    В dev/test-режиме — no-op (fail-open для локальной разработки и pytest).
     """
     debug = bool(current_app.config.get('DEBUG', False))
+    testing = bool(current_app.config.get('TESTING', False))
     env = current_app.config.get('ENV', 'development').lower()
-    return env == 'production' or not debug
+    return env == 'production' or (not debug and not testing)
 
 
 def _ensure_key_strict() -> str:
     """Строгая проверка наличия ключа для записи.
 
     В production отсутствие ключа — ошибка конфигурации.
-    В development — no-op: шифрование пропускается.
+    В development/testing — no-op: шифрование пропускается.
     """
     key = _get_encryption_key()
     if key:
@@ -65,7 +66,8 @@ def _ensure_key_strict() -> str:
 
     env = current_app.config.get('ENV', 'development').lower()
     debug = bool(current_app.config.get('DEBUG', False))
-    if env == 'production' or not debug:
+    testing = bool(current_app.config.get('TESTING', False))
+    if env == 'production' or (not debug and not testing):
         raise RuntimeError(
             'ENCRYPTION_KEY не задан: невозможно шифровать секреты в БД. '
             'Сгенерируйте ключ: '
