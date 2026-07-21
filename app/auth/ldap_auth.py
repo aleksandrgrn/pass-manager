@@ -3,6 +3,7 @@ import logging
 import socket
 from ldap3 import Server, Connection, ALL, SUBTREE, Tls
 from ldap3.core.exceptions import LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError
+from ldap3.utils.conv import escape_filter_chars
 import ssl
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,9 @@ def authenticate_ldap(username, password, app):
             )
             
             # Search for user
-            search_filter = ldap_user_search_filter.format(username=username)
+            # B5/F-004: экранируем спецсимволы LDAP-фильтра (инъекция через username)
+            safe_username = escape_filter_chars(username)
+            search_filter = ldap_user_search_filter.format(username=safe_username)
             search_base = f'{ldap_user_dn},{ldap_base_dn}' if ldap_user_dn else ldap_base_dn
             
             bind_conn.search(
@@ -144,27 +147,28 @@ def authenticate_ldap(username, password, app):
 
 
 def _determine_role(member_of, app):
-    """Determine user role based on AD group membership."""
-    # Normalize member_of to a list of strings
-    groups = [str(g).lower() for g in member_of]
-    
-    admin_dn = app.config.get('LDAP_GROUP_ADMIN_DN', '').lower()
-    lead_dn = app.config.get('LDAP_GROUP_LEAD_DN', '').lower()
-    user_dn = app.config.get('LDAP_GROUP_USER_DN', '').lower()
-    
-    # Also check short CN names
-    admin_cn = app.config.get('LDAP_GROUP_ADMIN', 'CN=pass-admin').lower()
-    lead_cn = app.config.get('LDAP_GROUP_LEAD', 'CN=pass-lead').lower()
-    
-    for group in groups:
-        if admin_dn and admin_dn in group:
-            return 'pass-admin'
-        if admin_cn and admin_cn in group:
-            return 'pass-admin'
-        if lead_dn and lead_dn in group:
-            return 'pass-lead'
-        if lead_cn and lead_cn in group:
-            return 'pass-lead'
-    
-    # Default: pass-user
+    """Determine user role based on AD group membership.
+
+    B6/F-007: только exact-DN matching. Substring-fallback убран (security risk:
+    'CN=pass-admin-ro' или 'CN=pass-administrators' давали full admin).
+
+    Приоритет: admin > lead > user.
+    При пустых LDAP_GROUP_*_DN — отказ от role-mapping, возвращаем 'pass-user'
+    (минимальные права по умолчанию).
+    """
+    groups = {str(g).lower() for g in member_of}
+
+    admin_dn = app.config.get('LDAP_GROUP_ADMIN_DN', '').lower().strip()
+    lead_dn = app.config.get('LDAP_GROUP_LEAD_DN', '').lower().strip()
+    user_dn = app.config.get('LDAP_GROUP_USER_DN', '').lower().strip()
+
+    # Exact-DN matching только. Никаких substring/CN fallback.
+    if admin_dn and admin_dn in groups:
+        return 'pass-admin'
+    if lead_dn and lead_dn in groups:
+        return 'pass-lead'
+    if user_dn and user_dn in groups:
+        return 'pass-user'
+
+    # Нет matching — минимальная роль (fail-safe, не fail-open)
     return 'pass-user'

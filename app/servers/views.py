@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from app.extensions import db
 from app.models import Server, Domain
+from app.auth.decorators import role_required
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
@@ -98,6 +99,7 @@ def detail(server_id):
 
 @servers_bp.route('/new', methods=['GET', 'POST'])
 @login_required
+@role_required('pass-admin', 'pass-lead')
 def create():
     """Add a new server. Available to all authenticated users."""
     form = ServerForm()
@@ -113,6 +115,7 @@ def create():
 
 @servers_bp.route('/<int:server_id>/edit', methods=['GET', 'POST'])
 @login_required
+@role_required('pass-admin', 'pass-lead')
 def edit(server_id):
     """Edit a server (full form)."""
     server = Server.query.get_or_404(server_id)
@@ -127,6 +130,7 @@ def edit(server_id):
 
 @servers_bp.route('/<int:server_id>/delete', methods=['POST'])
 @login_required
+@role_required('pass-admin')
 def delete(server_id):
     """Delete a server."""
     server = Server.query.get_or_404(server_id)
@@ -154,6 +158,10 @@ def edit_field(server_id):
     field_name = (request.form.get('field') or '').strip()
     value = request.form.get('value', '').strip()
 
+    # B12/F-017: pass-user — read-only, не может менять даже метаданные
+    if not current_user.can_view_passwords:
+        abort(403, description='Только просмотр: нет прав на редактирование')
+
     attr = INLINE_EDITABLE_FIELDS.get(field_name)
     if not attr:
         abort(400, description='Недопустимое поле для редактирования')
@@ -177,6 +185,7 @@ def edit_field(server_id):
 
 @servers_bp.route('/<int:server_id>/toggle', methods=['POST'])
 @login_required
+@role_required('pass-admin', 'pass-lead')
 def toggle_field(server_id):
     """Toggle a boolean field (services, active) via HTMX."""
     server = Server.query.get_or_404(server_id)
@@ -203,6 +212,7 @@ def toggle_field(server_id):
 
 @servers_bp.route('/<int:server_id>/domains', methods=['POST'])
 @login_required
+@role_required('pass-admin', 'pass-lead')
 def add_domain(server_id):
     """Add a domain to a server via HTMX."""
     server = Server.query.get_or_404(server_id)
@@ -218,6 +228,7 @@ def add_domain(server_id):
 
 @servers_bp.route('/domains/<int:domain_id>/delete', methods=['POST'])
 @login_required
+@role_required('pass-admin', 'pass-lead')
 def delete_domain(domain_id):
     """Delete a domain via HTMX."""
     domain = Domain.query.get_or_404(domain_id)

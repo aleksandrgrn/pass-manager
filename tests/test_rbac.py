@@ -92,16 +92,15 @@ class TestInlineEditRbac:
         ('ip_address', '203.0.113.10'),
         ('notes', 'changed'),
     ])
-    def test_user_can_edit_non_password_fields(
+    def test_user_cannot_edit_non_password_fields(
         self, regular_client, sample_server, field, value,
     ):
-        """pass-user может менять обычные поля → 200."""
+        """B12/F-017: pass-user — read-only, не может менять метаданные → 403."""
         resp = regular_client.post(
             f'/servers/{sample_server.id}/field',
             data={'field': field, 'value': value},
         )
-        assert resp.status_code == 200
-        assert value in resp.get_data(as_text=True)
+        assert resp.status_code == 403
 
     def test_admin_can_edit_password_field(self, admin_client, sample_server):
         """pass-admin может редактировать пароль → 200 и значение меняется в БД."""
@@ -116,3 +115,73 @@ class TestInlineEditRbac:
         with db.session.no_autoflush:
             refreshed = db.session.get(Server, sample_server.id)
             assert refreshed.password == 'new-pass-456'
+
+
+# --------------------------------------------------------------------------- #
+# B2/B3: RBAC на mutating endpoints серверов
+# --------------------------------------------------------------------------- #
+
+class TestRbacOnMutatingEndpoints:
+    """B2/B3/F-001/F-002: pass-user не может mutating actions на серверах."""
+
+    def test_user_cannot_create_server(self, regular_client):
+        """B3: POST /servers/new → 403 для pass-user."""
+        resp = regular_client.post('/servers/new', data={
+            'name': 'evil', 'ip_address': '203.0.113.99',
+        })
+        assert resp.status_code == 403
+
+    def test_user_cannot_edit_server(self, regular_client, sample_server):
+        """B2/F-001: POST /servers/<id>/edit → 403 для pass-user."""
+        resp = regular_client.post(f'/servers/{sample_server.id}/edit', data={
+            'name': 'hacked', 'ip_address': sample_server.ip_address,
+        })
+        assert resp.status_code == 403
+
+    def test_user_cannot_delete_server(self, regular_client, sample_server):
+        """B3: POST /servers/<id>/delete → 403 для pass-user."""
+        resp = regular_client.post(f'/servers/{sample_server.id}/delete')
+        assert resp.status_code == 403
+
+    def test_user_cannot_toggle_field(self, regular_client, sample_server):
+        """B3: POST /servers/<id>/toggle → 403 для pass-user."""
+        resp = regular_client.post(
+            f'/servers/{sample_server.id}/toggle',
+            data={'field': 'active'},
+        )
+        assert resp.status_code == 403
+
+    def test_user_cannot_add_domain(self, regular_client, sample_server):
+        """B3: POST /servers/<id>/domains → 403 для pass-user."""
+        resp = regular_client.post(
+            f'/servers/{sample_server.id}/domains',
+            data={'domain': 'evil.com'},
+        )
+        assert resp.status_code == 403
+
+    def test_user_cannot_delete_domain(self, regular_client, sample_server):
+        """B3: POST /servers/domains/<id>/delete → 403 для pass-user."""
+        from app.models import Domain
+        from app.extensions import db
+        domain = Domain.query.filter_by(server_id=sample_server.id).first()
+        resp = regular_client.post(f'/servers/domains/{domain.id}/delete')
+        assert resp.status_code == 403
+
+    def test_admin_can_create_server(self, admin_client):
+        """B3: pass-admin может создать сервер → 302 (redirect)."""
+        resp = admin_client.post('/servers/new', data={
+            'name': 'new-prod-01', 'ip_address': '192.0.2.50',
+        })
+        assert resp.status_code == 302
+
+    def test_lead_can_edit_server(self, lead_client, sample_server):
+        """B2: pass-lead может редактировать сервер → 302."""
+        resp = lead_client.post(f'/servers/{sample_server.id}/edit', data={
+            'name': sample_server.name, 'ip_address': '203.0.113.20',
+        })
+        assert resp.status_code == 302
+
+    def test_lead_cannot_delete_server(self, lead_client, sample_server):
+        """B3: pass-lead НЕ может удалять (только pass-admin) → 403."""
+        resp = lead_client.post(f'/servers/{sample_server.id}/delete')
+        assert resp.status_code == 403

@@ -42,6 +42,17 @@ def is_no_op_mode() -> bool:
     return not _get_encryption_key()
 
 
+def is_strict_mode() -> bool:
+    """True, если приложение работает в strict/production-режиме.
+
+    В strict-режиме отсутствие ENCRYPTION_KEY = RuntimeError (fail-closed).
+    В dev-режиме — no-op (fail-open для локальной разработки).
+    """
+    debug = bool(current_app.config.get('DEBUG', False))
+    env = current_app.config.get('ENV', 'development').lower()
+    return env == 'production' or not debug
+
+
 def _ensure_key_strict() -> str:
     """Строгая проверка наличия ключа для записи.
 
