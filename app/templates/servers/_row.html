@@ -1,69 +1,77 @@
-<tr id="server-row-{{ server.id }}" class="border-b hover:bg-gray-50 {% if not server.active %}opacity-50{% endif %}">
-    <td class="px-3 py-2 text-gray-500">{{ server.id }}</td>
-    <td class="px-3 py-2">
+<tr id="server-row-{{ server.id }}" class="{% if not server.active %}opacity-50{% endif %}">
+    <td class="cell-num">{{ server.id }}</td>
+    <td>
         <div
             {% if 1 %}data-inline-edit="name" data-server-id="{{ server.id }}"{% endif %}
-            class="cursor-text font-medium text-gray-900"
+            class="cursor-text font-medium text-ink"
             title="Двойной клик для редактирования">{{ server.name }}</div>
     </td>
     {% if passwords_visible %}
-    <td class="px-3 py-2">
+    <td>
         <div data-inline-edit="password" data-server-id="{{ server.id }}" class="cursor-text font-mono text-xs">
             {{ server.password or '—' }}
         </div>
     </td>
     {% endif %}
-    <td class="px-3 py-2 font-mono text-xs">
+    <td class="cell-mono">
         <div data-inline-edit="ip_address" data-server-id="{{ server.id }}" class="cursor-text">{{ server.ip_address or '—' }}</div>
     </td>
-    <td class="px-3 py-2">
+    <td>
         <div data-inline-edit="provider" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider or '—' }}</div>
     </td>
-    <td class="px-3 py-2">
+    <td>
         <div data-inline-edit="provider_login" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_login or '—' }}</div>
     </td>
     {% if passwords_visible %}
-    <td class="px-3 py-2">
-        <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text font-mono text-xs">{{ server.provider_password or '—' }}</div>
+    <td class="cell-mono">
+        <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_password or '—' }}</div>
     </td>
     {% endif %}
-    <td class="px-3 py-2">
+    <td>
         {% for d in server.domains %}
-        <span class="inline-block bg-gray-100 px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
+        <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
         {% endfor %}
     </td>
-    <td class="px-3 py-2 text-center">
+    <td class="text-center">
         <button hx-post="{{ url_for('servers.toggle_field', server_id=server.id) }}"
-                hx-vals='{"field": "has_exim"}' hx-target="#server-row-{{ server.id }}" hx-swap="none"
-                class="px-2 py-1 rounded text-xs {% if server.has_exim %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400{% endif %}">
+                hx-vals='{"field": "has_exim"}' hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
+                class="pill {% if server.has_exim %}on{% else %}off{% endif %}">
             {{ '✓' if server.has_exim else '—' }}
         </button>
     </td>
-    <td class="px-3 py-2 text-center">
+    <td class="text-center">
         <button hx-post="{{ url_for('servers.toggle_field', server_id=server.id) }}"
-                hx-vals='{"field": "has_squid"}' hx-target="#server-row-{{ server.id }}" hx-swap="none"
-                class="px-2 py-1 rounded text-xs {% if server.has_squid %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400{% endif %}">
+                hx-vals='{"field": "has_squid"}' hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
+                class="pill {% if server.has_squid %}on{% else %}off{% endif %}">
             {{ '✓' if server.has_squid else '—' }}
         </button>
     </td>
-    <td class="px-3 py-2 text-center">
+    <td class="text-center">
         <button hx-post="{{ url_for('servers.toggle_field', server_id=server.id) }}"
-                hx-vals='{"field": "has_vpn"}' hx-target="#server-row-{{ server.id }}" hx-swap="none"
-                class="px-2 py-1 rounded text-xs {% if server.has_vpn %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-400{% endif %}">
+                hx-vals='{"field": "has_vpn"}' hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
+                class="pill {% if server.has_vpn %}on{% else %}off{% endif %}">
             {{ '✓' if server.has_vpn else '—' }}
         </button>
     </td>
-    <td class="px-3 py-2">
-        <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-gray-600 text-xs">{{ server.notes or '—' }}</div>
+    <td>
+        <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-muted text-xs">{{ server.notes or '—' }}</div>
     </td>
-    <td class="px-3 py-2 text-center whitespace-nowrap">
-        <a href="{{ url_for('servers.detail', server_id=server.id) }}"
-           class="text-blue-600 hover:text-blue-800 text-xs" title="Детали">👁</a>
-        <a href="{{ url_for('servers.edit', server_id=server.id) }}"
-           class="text-gray-600 hover:text-gray-900 text-xs ml-1" title="Изменить">✎</a>
-        <button hx-post="{{ url_for('servers.delete', server_id=server.id) }}"
-                hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
-                hx-confirm="Удалить сервер «{{ server.name }}»?"
-                class="text-red-600 hover:text-red-800 text-xs ml-1" title="Удалить">×</button>
+    <td class="text-center whitespace-nowrap">
+        <div class="row-actions">
+            <a href="{{ url_for('servers.detail', server_id=server.id) }}"
+               class="icon-btn" aria-label="Детали {{ server.name }}" title="Детали">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </a>
+            <a href="{{ url_for('servers.edit', server_id=server.id) }}"
+               class="icon-btn" aria-label="Изменить {{ server.name }}" title="Изменить">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></svg>
+            </a>
+            <button hx-post="{{ url_for('servers.delete', server_id=server.id) }}"
+                    hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
+                    hx-confirm="Удалить сервер «{{ server.name }}»?"
+                    class="icon-btn danger" aria-label="Удалить {{ server.name }}" title="Удалить">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+        </div>
     </td>
 </tr>

@@ -200,10 +200,8 @@ def toggle_field(server_id):
     db.session.commit()
 
     return render_template(
-        'servers/_cell.html',
+        'servers/_row.html',
         server=server,
-        field=field_name,
-        value=getattr(server, attr),
         passwords_visible=_passwords_visible(),
     )
 

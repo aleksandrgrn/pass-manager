@@ -106,7 +106,6 @@ def login():
             )
             login_user(user)
             _reset_attempts(client_ip)
-            flash(f'Добро пожаловать, {user.display_name or user.username}!', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('servers.list_servers'))
 
@@ -118,7 +117,6 @@ def login():
                 return render_template('auth/login.html', form=form)
             login_user(local_user)
             _reset_attempts(client_ip)
-            flash(f'Вход выполнен как {local_user.username} (local, role={local_user.role})', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('servers.list_servers'))
 
@@ -134,7 +132,6 @@ def login():
 def logout():
     """Logout and redirect to login page."""
     logout_user()
-    flash('Вы вышли из системы.', 'info')
     return redirect(url_for('auth.login'))
 
 
