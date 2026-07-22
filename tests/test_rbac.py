@@ -9,26 +9,17 @@ import pytest
 # --------------------------------------------------------------------------- #
 
 class TestPasswordColumnVisibility:
-    """Столбец 'Пароль' должен присутствовать только для pass-admin/pass-lead."""
+    """Столбец 'Пароль' должен присутствовать только для superadmin."""
 
-    def test_admin_sees_password_column(self, admin_client, sample_server):
-        resp = admin_client.get('/servers/')
-        assert resp.status_code == 200
-        # Заголовок "Пароль" есть в шапке таблицы
-        assert 'Пароль' in resp.get_data(as_text=True)
+    def test_admin_does_not_see_password_column(self, admin_client, sample_server):
+        """admin не должен видеть столбец 'Пароль' в шапке таблицы."""
+        body = admin_client.get('/servers/').get_data(as_text=True)
+        assert '<th>Пароль</th>' not in body
 
-    def test_user_does_not_see_password_column(self, regular_client, sample_server):
-        """pass-user не должен видеть столбец 'Пароль' в шапке таблицы."""
-        # Создаём server через admin-фикстуру — нужен готовый sample_server
-        body = regular_client.get('/servers/').get_data(as_text=True)
-        # В шаблоне список заголовков не содержит "Пароль" при passwords_visible=False
-        # Проверяем отсутствие именно заголовка колонки:
-        assert '<th class="px-3 py-2">Пароль</th>' not in body
-
-    def test_lead_sees_password_column(self, lead_client, sample_server):
-        """pass-lead видит столбец 'Пароль' — как admin."""
-        body = lead_client.get('/servers/').get_data(as_text=True)
-        assert '<th class="px-3 py-2">Пароль</th>' in body
+    def test_superadmin_sees_password_column(self, superadmin_client, sample_server):
+        """superadmin видит столбец 'Пароль'."""
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert '<th>Пароль</th>' in body
 
 
 # --------------------------------------------------------------------------- #
@@ -36,19 +27,15 @@ class TestPasswordColumnVisibility:
 # --------------------------------------------------------------------------- #
 
 class TestPasswordValueVisibility:
-    """Значение пароля сервера должно присутствовать в HTML только для admin/lead."""
+    """Значение пароля сервера должно присутствовать в HTML только для superadmin."""
 
-    def test_admin_sees_password_value(self, admin_client, sample_server):
+    def test_admin_does_not_see_password_value(self, admin_client, sample_server):
+        """admin не должен видеть сам пароль в HTML списка."""
         body = admin_client.get('/servers/').get_data(as_text=True)
-        assert 's3cret-root-pass' in body
-
-    def test_user_does_not_see_password_value(self, regular_client, sample_server):
-        """pass-user не должен видеть сам пароль в HTML списка."""
-        body = regular_client.get('/servers/').get_data(as_text=True)
         assert 's3cret-root-pass' not in body
 
-    def test_lead_sees_password_value(self, lead_client, sample_server):
-        body = lead_client.get('/servers/').get_data(as_text=True)
+    def test_superadmin_sees_password_value(self, superadmin_client, sample_server):
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
         assert 's3cret-root-pass' in body
 
 
@@ -59,53 +46,76 @@ class TestPasswordValueVisibility:
 class TestDetailPage:
     """GET /servers/<id> — видимость пароля по ролям."""
 
-    def test_user_detail_has_no_password(self, regular_client, sample_server):
-        resp = regular_client.get(f'/servers/{sample_server.id}')
+    def test_admin_detail_has_no_password(self, admin_client, sample_server):
+        resp = admin_client.get(f'/servers/{sample_server.id}')
         assert resp.status_code == 200
         body = resp.get_data(as_text=True)
         assert 's3cret-root-pass' not in body
         # Должна быть индикация скрытия паролей
         assert 'Пароли скрыты' in body
 
-    def test_admin_detail_has_password(self, admin_client, sample_server):
-        body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
+    def test_superadmin_detail_has_password(self, superadmin_client, sample_server):
+        body = superadmin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
         assert 's3cret-root-pass' in body
 
 
 # --------------------------------------------------------------------------- #
-# inline edit endpoint — RBAC enforcement
+# inline edit endpoint — RBAC enforcement (FIX-6b: metadata vs password split)
 # --------------------------------------------------------------------------- #
 
-class TestInlineEditRbac:
-    """POST /servers/<id>/field — только pass-admin/pass-lead могут менять пароли."""
+class TestEditFieldSplit:
+    """FIX-6b: metadata доступна admin+, password-поля — только superadmin."""
 
-    def test_user_cannot_edit_password_field(self, regular_client, sample_server):
-        """pass-user не имеет права редактировать пароль → 403."""
-        resp = regular_client.post(
+    def test_admin_can_edit_metadata_field(self, admin_client, sample_server):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/field',
+            data={'field': 'name', 'value': 'renamed-by-admin'},
+        )
+        assert resp.status_code == 200
+
+    def test_admin_cannot_edit_password_field(self, admin_client, sample_server):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/field',
+            data={'field': 'password', 'value': 'HACKED'},
+        )
+        assert resp.status_code == 403
+
+    def test_superadmin_can_edit_password_field(self, superadmin_client, sample_server):
+        resp = superadmin_client.post(
+            f'/servers/{sample_server.id}/field',
+            data={'field': 'password', 'value': 'new-pass-456'},
+        )
+        assert resp.status_code == 200
+
+
+class TestInlineEditRbac:
+    """POST /servers/<id>/field — admin: metadata OK / password 403; superadmin: всё OK."""
+
+    def test_admin_cannot_edit_password_field(self, admin_client, sample_server):
+        resp = admin_client.post(
             f'/servers/{sample_server.id}/field',
             data={'field': 'password', 'value': 'HACKED'},
         )
         assert resp.status_code == 403
 
     @pytest.mark.parametrize('field,value', [
-        ('name', 'renamed-by-user'),
+        ('name', 'renamed-by-admin'),
         ('ip_address', '203.0.113.10'),
         ('notes', 'changed'),
     ])
-    def test_user_cannot_edit_non_password_fields(
-        self, regular_client, sample_server, field, value,
+    def test_admin_can_edit_non_password_fields(
+        self, admin_client, sample_server, field, value,
     ):
-        """B12/F-017: pass-user — read-only, не может менять метаданные → 403."""
-        resp = regular_client.post(
+        resp = admin_client.post(
             f'/servers/{sample_server.id}/field',
             data={'field': field, 'value': value},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    def test_admin_can_edit_password_field(self, admin_client, sample_server):
-        """pass-admin может редактировать пароль → 200 и значение меняется в БД."""
+    def test_superadmin_can_edit_password_field(self, superadmin_client, sample_server):
+        """superadmin может редактировать пароль → 200 и значение меняется в БД."""
         from app.models import Server
-        resp = admin_client.post(
+        resp = superadmin_client.post(
             f'/servers/{sample_server.id}/field',
             data={'field': 'password', 'value': 'new-pass-456'},
         )
@@ -118,70 +128,112 @@ class TestInlineEditRbac:
 
 
 # --------------------------------------------------------------------------- #
-# B2/B3: RBAC на mutating endpoints серверов
+# Mutating endpoints: обе роли (admin + superadmin) могут мутировать серверы
 # --------------------------------------------------------------------------- #
 
 class TestRbacOnMutatingEndpoints:
-    """B2/B3/F-001/F-002: pass-user не может mutating actions на серверах."""
+    """После A1: admin и superadmin могут все mutating-действия над серверами."""
 
-    def test_user_cannot_create_server(self, regular_client):
-        """B3: POST /servers/new → 403 для pass-user."""
-        resp = regular_client.post('/servers/new', data={
+    def test_anon_cannot_create_server(self, client):
+        resp = client.post('/servers/new', data={
             'name': 'evil', 'ip_address': '203.0.113.99',
         })
-        assert resp.status_code == 403
+        assert resp.status_code in (302, 401)
 
-    def test_user_cannot_edit_server(self, regular_client, sample_server):
-        """B2/F-001: POST /servers/<id>/edit → 403 для pass-user."""
-        resp = regular_client.post(f'/servers/{sample_server.id}/edit', data={
+    def test_anon_cannot_edit_server(self, client, sample_server):
+        resp = client.post(f'/servers/{sample_server.id}/edit', data={
             'name': 'hacked', 'ip_address': sample_server.ip_address,
         })
-        assert resp.status_code == 403
+        assert resp.status_code in (302, 401)
 
-    def test_user_cannot_delete_server(self, regular_client, sample_server):
-        """B3: POST /servers/<id>/delete → 403 для pass-user."""
-        resp = regular_client.post(f'/servers/{sample_server.id}/delete')
-        assert resp.status_code == 403
+    def test_anon_cannot_delete_server(self, client, sample_server):
+        resp = client.post(f'/servers/{sample_server.id}/delete')
+        assert resp.status_code in (302, 401)
 
-    def test_user_cannot_toggle_field(self, regular_client, sample_server):
-        """B3: POST /servers/<id>/toggle → 403 для pass-user."""
-        resp = regular_client.post(
+    def test_anon_cannot_toggle_field(self, client, sample_server):
+        resp = client.post(
             f'/servers/{sample_server.id}/toggle',
             data={'field': 'active'},
         )
-        assert resp.status_code == 403
+        assert resp.status_code in (302, 401)
 
-    def test_user_cannot_add_domain(self, regular_client, sample_server):
-        """B3: POST /servers/<id>/domains → 403 для pass-user."""
-        resp = regular_client.post(
+    def test_anon_cannot_add_domain(self, client, sample_server):
+        resp = client.post(
             f'/servers/{sample_server.id}/domains',
             data={'domain': 'evil.com'},
         )
-        assert resp.status_code == 403
+        assert resp.status_code in (302, 401)
 
-    def test_user_cannot_delete_domain(self, regular_client, sample_server):
-        """B3: POST /servers/domains/<id>/delete → 403 для pass-user."""
+    def test_anon_cannot_delete_domain(self, client, sample_server):
         from app.models import Domain
-        from app.extensions import db
         domain = Domain.query.filter_by(server_id=sample_server.id).first()
-        resp = regular_client.post(f'/servers/domains/{domain.id}/delete')
-        assert resp.status_code == 403
+        resp = client.post(f'/servers/domains/{domain.id}/delete')
+        assert resp.status_code in (302, 401)
 
     def test_admin_can_create_server(self, admin_client):
-        """B3: pass-admin может создать сервер → 302 (redirect)."""
         resp = admin_client.post('/servers/new', data={
             'name': 'new-prod-01', 'ip_address': '192.0.2.50',
         })
         assert resp.status_code == 302
 
-    def test_lead_can_edit_server(self, lead_client, sample_server):
-        """B2: pass-lead может редактировать сервер → 302."""
-        resp = lead_client.post(f'/servers/{sample_server.id}/edit', data={
+    def test_admin_can_edit_server(self, admin_client, sample_server):
+        resp = admin_client.post(f'/servers/{sample_server.id}/edit', data={
             'name': sample_server.name, 'ip_address': '203.0.113.20',
         })
         assert resp.status_code == 302
 
-    def test_lead_cannot_delete_server(self, lead_client, sample_server):
-        """B3: pass-lead НЕ может удалять (только pass-admin) → 403."""
-        resp = lead_client.post(f'/servers/{sample_server.id}/delete')
-        assert resp.status_code == 403
+    def test_admin_can_delete_server(self, admin_client, sample_server):
+        resp = admin_client.post(f'/servers/{sample_server.id}/delete')
+        assert resp.status_code == 302
+
+    def test_admin_can_toggle_active(self, admin_client, sample_server):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/toggle',
+            data={'field': 'active'},
+        )
+        assert resp.status_code == 200
+
+    def test_admin_can_add_domain(self, admin_client, sample_server):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/domains',
+            data={'domain': 'newdomain.com'},
+        )
+        assert resp.status_code == 200
+
+    def test_admin_can_delete_domain(self, admin_client, sample_server):
+        from app.models import Domain
+        domain = Domain.query.filter_by(server_id=sample_server.id).first()
+        resp = admin_client.post(f'/servers/domains/{domain.id}/delete')
+        assert resp.status_code == 204
+
+    def test_superadmin_can_create_server(self, superadmin_client):
+        resp = superadmin_client.post('/servers/new', data={
+            'name': 'new-prod-02', 'ip_address': '192.0.2.51',
+        })
+        assert resp.status_code == 302
+
+    def test_superadmin_can_delete_server(self, superadmin_client, sample_server):
+        resp = superadmin_client.post(f'/servers/{sample_server.id}/delete')
+        assert resp.status_code == 302
+
+
+# --------------------------------------------------------------------------- #
+# Role properties на модели User
+# --------------------------------------------------------------------------- #
+
+class TestRoleProperties:
+    """User(role=...) → is_admin / is_superadmin / can_view_passwords."""
+
+    def test_admin_role_properties(self, app):
+        from app.models import User
+        u = User(username='x', role='admin')
+        assert u.is_admin is True
+        assert u.is_superadmin is False
+        assert u.can_view_passwords is False
+
+    def test_superadmin_role_properties(self, app):
+        from app.models import User
+        u = User(username='y', role='superadmin')
+        assert u.is_admin is True
+        assert u.is_superadmin is True
+        assert u.can_view_passwords is True

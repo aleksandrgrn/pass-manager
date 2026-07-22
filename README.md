@@ -44,13 +44,14 @@ pass-manager/
 
 ## Роли RBAC
 
-| Роль        | Кто                          | Что видит                          |
-|-------------|------------------------------|------------------------------------|
-| `pass-user` | Обычный администратор        | Всё, кроме столбцов паролей        |
-| `pass-lead` | Руководитель                 | Всё, включая пароли                |
-| `pass-admin`| Супер-администратор          | Всё, включая пароли                |
+| Роль          | Описание                              | Видит пароли |
+|---------------|----------------------------------------|--------------|
+| `superadmin`  | Полный доступ, управление ролями       | Да           |
+| `admin`       | Управление серверами, онбординг        | Нет          |
 
-`pass-user` не может ни просматривать, ни редактировать поля, в названии которых есть `password` или `pass`.
+`admin` не может ни просматривать, ни редактировать поля, в названии которых есть `password` или `pass` — это доступно только `superadmin`.
+
+Если у вас существующая БД с ролями `pass-admin`/`pass-lead`/`pass-user`, прогоните `python scripts/migrate_to_track_c.py` (сначала с `--dry-run`, затем без него).
 
 ## Быстрый старт (dev)
 
@@ -110,19 +111,14 @@ LDAP_USER_DN=OU=Users
 LDAP_BIND_DN=CN=svc-passmanager,OU=ServiceAccounts,DC=example,DC=local
 LDAP_BIND_PASSWORD=...
 LDAP_USER_SEARCH_FILTER=(sAMAccountName={username})
-
-# Группы → роли
-LDAP_GROUP_ADMIN=CN=pass-admin
-LDAP_GROUP_LEAD=CN=pass-lead
-LDAP_GROUP_USER=CN=pass-user
-# При желании можно указать полные DN:
-LDAP_GROUP_ADMIN_DN=CN=pass-admin,OU=Groups,DC=example,DC=local
 ```
+
+LDAP используется только для аутентификации (auth-only). Роль не определяется через AD-группы — она хранится в БД pass-manager и назначается вручную (`superadmin` может менять роль пользователя).
 
 Алгоритм:
 1. Bind под service account → поиск пользователя по `sAMAccountName`.
 2. Bind под найденным DN и паролем пользователя (проверка пароля).
-3. Чтение `memberOf` → сравнение с DN/CN-ами групп → выбор роли.
+3. Новый пользователь создаётся с ролью `admin`; при повторном входе роль из БД не перезаписывается.
 4. Если LDAP недоступен или `LDAP_SERVER` пуст — fallback на local admin из `.env`.
 
 ## Production-деплой на b000860
@@ -192,6 +188,6 @@ nginx -t && systemctl reload nginx
   **Fernet** на уровне столбцов (колонки `*_encrypted`) через `encrypt()/decrypt()` из
   `app/security.py`. Требуется `ENCRYPTION_KEY` в `.env` (см. `.env.example`).
 - Пароль локального admin хранится хешем (werkzeug `generate_password_hash`), не в открытом виде.
-- RBAC: `pass-user` не видит и не может редактировать поля паролей (см. таблицу ролей выше).
+- RBAC: `admin` не видит и не может редактировать поля паролей (см. таблицу ролей выше).
 - `.env` **никогда** не коммитить (см. `.gitignore`); БД (`instance/`) тоже вне git.
 - CSRF-токен встроен во все формы и прокидывается в HTMX-запросы.

@@ -59,10 +59,6 @@ INLINE_EDITABLE_FIELDS = {
     'mgt_pass': 'mgt_pass',
 }
 
-# Boolean toggle fields (services + active)
-INLINE_TOGGLE_FIELDS = {
-    'has_exim': 'has_exim',
-    'has_squid': 'has_squid',
-    'has_vpn': 'has_vpn',
-    'active': 'active',
-}
+# Boolean toggle fields. Сервисы (has_exim/has_squid/has_vpn) убраны из
+# inline-toggle в A1 — в A4 будут управляться через карточку сервера.
+INLINE_TOGGLE_FIELDS = {'active': 'active'}

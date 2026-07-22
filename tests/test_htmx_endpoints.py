@@ -58,9 +58,6 @@ class TestToggleField:
     """POST /servers/<id>/toggle."""
 
     @pytest.mark.parametrize('field,initial', [
-        ('has_exim', True),
-        ('has_squid', False),
-        ('has_vpn', False),
         ('active', True),
     ])
     def test_toggle_boolean_field_in_db(
@@ -85,6 +82,15 @@ class TestToggleField:
         resp = admin_client.post(
             f'/servers/{sample_server.id}/toggle',
             data={'field': 'totally_invalid'},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.parametrize('field', ['has_exim', 'has_squid', 'has_vpn'])
+    def test_toggle_service_field_returns_400(self, admin_client, sample_server, field):
+        """A1: сервисы убраны из INLINE_TOGGLE_FIELDS, больше не тогглятся из списка."""
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/toggle',
+            data={'field': field},
         )
         assert resp.status_code == 400
 

@@ -63,17 +63,7 @@ class Config:
     LDAP_BIND_DN = os.environ.get('LDAP_BIND_DN', '')
     LDAP_BIND_PASSWORD = os.environ.get('LDAP_BIND_PASSWORD', '')
     LDAP_USER_SEARCH_FILTER = os.environ.get('LDAP_USER_SEARCH_FILTER', '(sAMAccountName={username})')
-    
-    # LDAP Groups -> Roles mapping
-    LDAP_GROUP_ADMIN = os.environ.get('LDAP_GROUP_ADMIN', 'CN=pass-admin')
-    LDAP_GROUP_LEAD = os.environ.get('LDAP_GROUP_LEAD', 'CN=pass-lead')
-    LDAP_GROUP_USER = os.environ.get('LDAP_GROUP_USER', 'CN=pass-user')
-    
-    # Full DN for group membership checks
-    LDAP_GROUP_ADMIN_DN = os.environ.get('LDAP_GROUP_ADMIN_DN', '')
-    LDAP_GROUP_LEAD_DN = os.environ.get('LDAP_GROUP_LEAD_DN', '')
-    LDAP_GROUP_USER_DN = os.environ.get('LDAP_GROUP_USER_DN', '')
-    
+
     # Local fallback admin
     LOCAL_ADMIN_USERNAME = os.environ.get('LOCAL_ADMIN_USERNAME', 'admin')
     LOCAL_ADMIN_PASSWORD = os.environ.get('LOCAL_ADMIN_PASSWORD', '')

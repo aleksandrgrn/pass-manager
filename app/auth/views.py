@@ -101,7 +101,6 @@ def login():
             user = _get_or_create_user(
                 username=ldap_result['user_info']['username'],
                 display_name=ldap_result['user_info'].get('display_name'),
-                role=ldap_result['role'],
                 is_local=False,
             )
             login_user(user)
@@ -135,23 +134,24 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-def _get_or_create_user(username, display_name=None, role='pass-user', is_local=False):
-    """Get existing user or create new one from LDAP data."""
+def _get_or_create_user(username, display_name=None, is_local=False):
+    """Get existing user or create new one from LDAP data.
+
+    Роль НЕ перезаписывается при повторном логине — она хранится только в БД
+    и управляется через UI/DB (superadmin может повышать/понижать пользователей).
+    """
     user = User.query.filter_by(username=username).first()
     if user:
-        # Update info from LDAP
-        if display_name:
+        if display_name and display_name != user.display_name:
             user.display_name = display_name
-        user.role = role
-        user.is_active = True
-        db.session.commit()
-    else:
-        user = User(
-            username=username,
-            display_name=display_name,
-            role=role,
-            is_local=is_local,
-        )
-        db.session.add(user)
-        db.session.commit()
+            db.session.commit()
+        return user
+    user = User(
+        username=username,
+        display_name=display_name or username,
+        role='admin',
+        is_local=is_local,
+    )
+    db.session.add(user)
+    db.session.commit()
     return user

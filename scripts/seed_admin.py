@@ -23,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description='Create local admin user')
     parser.add_argument('--username', default=os.environ.get('LOCAL_ADMIN_USERNAME', 'admin'))
     parser.add_argument('--password', default=os.environ.get('LOCAL_ADMIN_PASSWORD'))
-    parser.add_argument('--role', default='pass-admin', choices=['pass-admin', 'pass-lead', 'pass-user'])
+    parser.add_argument('--role', default='superadmin', choices=['admin', 'superadmin'])
     args = parser.parse_args()
 
     password = args.password

@@ -133,7 +133,7 @@ class TestLoginRateLimit:
         """После успешного входа счётчик неудач для IP должен сброситься."""
         from app.models import User
         with app.app_context():
-            u = User(username='rl_user', role='pass-user', is_local=True)
+            u = User(username='rl_user', role='admin', is_local=True)
             u.set_password('good')
             db.session.add(u); db.session.commit()
 
