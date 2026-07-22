@@ -25,9 +25,6 @@ SORTABLE_COLUMNS = {
     'ip_address': Server.ip_address,
     'provider': Server.provider,
     'active': Server.active,
-    'has_exim': Server.has_exim,
-    'has_squid': Server.has_squid,
-    'has_vpn': Server.has_vpn,
 }
 
 
@@ -99,7 +96,7 @@ def detail(server_id):
 
 @servers_bp.route('/new', methods=['GET', 'POST'])
 @login_required
-@role_required('pass-admin', 'pass-lead')
+@role_required('admin', 'superadmin')
 def create():
     """Add a new server. Available to all authenticated users."""
     form = ServerForm()
@@ -115,7 +112,7 @@ def create():
 
 @servers_bp.route('/<int:server_id>/edit', methods=['GET', 'POST'])
 @login_required
-@role_required('pass-admin', 'pass-lead')
+@role_required('admin', 'superadmin')
 def edit(server_id):
     """Edit a server (full form)."""
     server = Server.query.get_or_404(server_id)
@@ -130,7 +127,7 @@ def edit(server_id):
 
 @servers_bp.route('/<int:server_id>/delete', methods=['POST'])
 @login_required
-@role_required('pass-admin')
+@role_required('admin', 'superadmin')
 def delete(server_id):
     """Delete a server."""
     server = Server.query.get_or_404(server_id)
@@ -146,6 +143,13 @@ def delete(server_id):
 
 # --- HTMX inline editing endpoints ---
 
+PASSWORD_FIELD_KEYWORDS = ('password', 'pass')
+
+
+def _is_password_field(field_name):
+    return any(kw in field_name.lower() for kw in PASSWORD_FIELD_KEYWORDS)
+
+
 @servers_bp.route('/<int:server_id>/field', methods=['POST'])
 @login_required
 def edit_field(server_id):
@@ -158,18 +162,17 @@ def edit_field(server_id):
     field_name = (request.form.get('field') or '').strip()
     value = request.form.get('value', '').strip()
 
-    # B12/F-017: pass-user — read-only, не может менять даже метаданные
-    if not current_user.can_view_passwords:
-        abort(403, description='Только просмотр: нет прав на редактирование')
-
     attr = INLINE_EDITABLE_FIELDS.get(field_name)
     if not attr:
         abort(400, description='Недопустимое поле для редактирования')
 
-    # Password fields restricted to users with permission
-    if 'password' in field_name or 'pass' in field_name:
-        if not _passwords_visible():
+    # FIX-6b: metadata доступна admin+, password-поля — только superadmin
+    if _is_password_field(field_name):
+        if not current_user.is_superadmin:
             abort(403, description='Недостаточно прав для редактирования пароля')
+    else:
+        if not current_user.is_admin:
+            abort(403, description='Только просмотр: нет прав на редактирование')
 
     setattr(server, attr, value or None)
     db.session.commit()
@@ -185,7 +188,7 @@ def edit_field(server_id):
 
 @servers_bp.route('/<int:server_id>/toggle', methods=['POST'])
 @login_required
-@role_required('pass-admin', 'pass-lead')
+@role_required('admin', 'superadmin')
 def toggle_field(server_id):
     """Toggle a boolean field (services, active) via HTMX."""
     server = Server.query.get_or_404(server_id)
@@ -210,7 +213,7 @@ def toggle_field(server_id):
 
 @servers_bp.route('/<int:server_id>/domains', methods=['POST'])
 @login_required
-@role_required('pass-admin', 'pass-lead')
+@role_required('admin', 'superadmin')
 def add_domain(server_id):
     """Add a domain to a server via HTMX."""
     server = Server.query.get_or_404(server_id)
@@ -226,7 +229,7 @@ def add_domain(server_id):
 
 @servers_bp.route('/domains/<int:domain_id>/delete', methods=['POST'])
 @login_required
-@role_required('pass-admin', 'pass-lead')
+@role_required('admin', 'superadmin')
 def delete_domain(domain_id):
     """Delete a domain via HTMX."""
     domain = Domain.query.get_or_404(domain_id)

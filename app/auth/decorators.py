@@ -14,7 +14,7 @@ def role_required(*roles: str):
     Usage:
         @servers_bp.route('/<id>/delete', methods=['POST'])
         @login_required
-        @role_required('pass-admin', 'pass-lead')
+        @role_required('admin', 'superadmin')
         def delete(server_id): ...
     """
     required = set(roles)

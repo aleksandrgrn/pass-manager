@@ -89,20 +89,14 @@ def _make_user(db, username: str, role: str, password: str = 'pass123'):
 
 @pytest.fixture()
 def admin_user(db):
-    """Пользователь с ролью pass-admin (видит пароли)."""
-    return _make_user(db, username='admin_test', role='pass-admin')
+    """Пользователь с ролью admin (управляет серверами, паролей не видит)."""
+    return _make_user(db, username='admin_test', role='admin')
 
 
 @pytest.fixture()
-def lead_user(db):
-    """Пользователь с ролью pass-lead (видит пароли)."""
-    return _make_user(db, username='lead_test', role='pass-lead')
-
-
-@pytest.fixture()
-def regular_user(db):
-    """Пользователь с ролью pass-user (без доступа к паролям)."""
-    return _make_user(db, username='user_test', role='pass-user')
+def superadmin_user(db):
+    """Пользователь с ролью superadmin (единственный, кто видит пароли)."""
+    return _make_user(db, username='superadmin_test', role='superadmin')
 
 
 # --------------------------------------------------------------------------- #
@@ -129,25 +123,17 @@ def login_as(client: FlaskClient, username: str, password: str = 'pass123') -> N
 
 @pytest.fixture()
 def admin_client(app: Flask, admin_user) -> FlaskClient:
-    """Клиент, залогиненный под pass-admin."""
+    """Клиент, залогиненный под admin."""
     c = app.test_client()
     login_as(c, 'admin_test')
     return c
 
 
 @pytest.fixture()
-def lead_client(app: Flask, lead_user) -> FlaskClient:
-    """Клиент, залогиненный под pass-lead."""
+def superadmin_client(app: Flask, superadmin_user) -> FlaskClient:
+    """Клиент, залогиненный под superadmin."""
     c = app.test_client()
-    login_as(c, 'lead_test')
-    return c
-
-
-@pytest.fixture()
-def regular_client(app: Flask, regular_user) -> FlaskClient:
-    """Клиент, залогиненный под pass-user."""
-    c = app.test_client()
-    login_as(c, 'user_test')
+    login_as(c, 'superadmin_test')
     return c
 
 

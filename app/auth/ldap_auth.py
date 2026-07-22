@@ -18,7 +18,7 @@ def authenticate_ldap(username, password, app):
     Authenticate user against Active Directory via LDAP.
     
     Returns:
-        dict with keys: authenticated (bool), user_info (dict), role (str)
+        dict with keys: authenticated (bool), user_info (dict)
         or None if authentication fails (включая таймаут).
     """
     ldap_server = app.config.get('LDAP_SERVER')
@@ -73,21 +73,20 @@ def authenticate_ldap(username, password, app):
                 search_base=search_base,
                 search_filter=search_filter,
                 search_scope=SUBTREE,
-                attributes=['sAMAccountName', 'displayName', 'mail', 'memberOf', 'dn']
+                attributes=['sAMAccountName', 'displayName', 'mail', 'dn']
             )
-            
+
             if not bind_conn.entries:
                 logger.info(f'LDAP user {username} not found')
                 bind_conn.unbind()
                 return None
-            
+
             entry = bind_conn.entries[0]
             user_dn = entry.entry_dn
             display_name = str(entry.displayName) if hasattr(entry, 'displayName') else username
-            member_of = entry.memberOf.values if hasattr(entry, 'memberOf') else []
-            
+
             bind_conn.unbind()
-            
+
             # Now try to bind as the user to verify password
             user_conn = Connection(
                 server,
@@ -97,10 +96,7 @@ def authenticate_ldap(username, password, app):
                 receive_timeout=LDAP_RECEIVE_TIMEOUT,
             )
             user_conn.unbind()
-            
-            # Determine role from group membership
-            role = _determine_role(member_of, app)
-            
+
             return {
                 'authenticated': True,
                 'user_info': {
@@ -108,7 +104,6 @@ def authenticate_ldap(username, password, app):
                     'display_name': display_name,
                     'email': str(entry.mail) if hasattr(entry, 'mail') else None,
                 },
-                'role': role,
             }
         else:
             # No bind DN — try direct bind with username
@@ -128,7 +123,6 @@ def authenticate_ldap(username, password, app):
                     'username': username,
                     'display_name': username,
                 },
-                'role': 'pass-user',
             }
 
     except (LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError, socket.timeout) as e:
@@ -144,31 +138,3 @@ def authenticate_ldap(username, password, app):
     except Exception as e:
         logger.error(f'LDAP authentication error for {username}: {e}')
         return None
-
-
-def _determine_role(member_of, app):
-    """Determine user role based on AD group membership.
-
-    B6/F-007: только exact-DN matching. Substring-fallback убран (security risk:
-    'CN=pass-admin-ro' или 'CN=pass-administrators' давали full admin).
-
-    Приоритет: admin > lead > user.
-    При пустых LDAP_GROUP_*_DN — отказ от role-mapping, возвращаем 'pass-user'
-    (минимальные права по умолчанию).
-    """
-    groups = {str(g).lower() for g in member_of}
-
-    admin_dn = app.config.get('LDAP_GROUP_ADMIN_DN', '').lower().strip()
-    lead_dn = app.config.get('LDAP_GROUP_LEAD_DN', '').lower().strip()
-    user_dn = app.config.get('LDAP_GROUP_USER_DN', '').lower().strip()
-
-    # Exact-DN matching только. Никаких substring/CN fallback.
-    if admin_dn and admin_dn in groups:
-        return 'pass-admin'
-    if lead_dn and lead_dn in groups:
-        return 'pass-lead'
-    if user_dn and user_dn in groups:
-        return 'pass-user'
-
-    # Нет matching — минимальная роль (fail-safe, не fail-open)
-    return 'pass-user'
