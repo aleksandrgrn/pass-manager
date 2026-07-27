@@ -1,0 +1,23 @@
+{# Track C A3.3 п.1: фрагмент шагов, выделен из _provisioning_modal.html,
+   чтобы endpoint шага гонял по сети только этот div, а не всю страницу. #}
+<div id="provisioning-steps"
+     {% if job.status not in ('success', 'failed', 'cancelled') %}
+     hx-post="{{ url_for('provisioning.run_step', job_id=job.id) }}"
+     hx-trigger="load delay:500ms"
+     hx-swap="outerHTML"
+     {% endif %}>
+    <ul class="text-sm space-y-1">
+        {% for step_id in provisioning_steps %}
+        <li class="flex items-center justify-between">
+            <span class="font-mono">{{ step_id }}</span>
+            <span class="pill {{ 'on' if steps.get(step_id) in ('done', 'skipped') else 'off' }}">
+                {{ steps.get(step_id, 'pending') }}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+
+    {% if job.status == 'failed' %}
+    <p class="text-danger text-sm mt-4">Ошибка: {{ job.error_message }}</p>
+    {% endif %}
+</div>

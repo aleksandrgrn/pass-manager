@@ -5,6 +5,41 @@
     <a href="{{ url_for('servers.list_servers') }}" class="text-sm text-muted hover:text-ink transition">← Назад к списку</a>
     <h1 class="text-2xl font-bold mt-2 mb-6 text-ink">{{ server.name }} <span class="text-sm text-faint">#{{ server.id }}</span></h1>
 
+    {# Track C A3.3 п.4: статус онбординга. #}
+    {% if server.provisioning_status == 'provisioning' %}
+    <div class="card p-4 mb-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+            <span class="pill on">provisioning</span>
+            <span class="text-sm text-muted">Идёт автоматический онбординг…</span>
+        </div>
+        {# Выход из зависшего состояния: если воркер умер посреди шага, статус
+           так и остаётся 'provisioning'. Шаги идемпотентны — повтор безопасен. #}
+        {% if provisioning_job %}
+        <form method="POST" action="{{ url_for('provisioning.restart', job_id=provisioning_job.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn ghost" title="Если прогресс завис — перезапустить текущий шаг">Перезапустить шаг</button>
+        </form>
+        {% endif %}
+    </div>
+    {% elif server.provisioning_status == 'provisioning_failed' %}
+    <div class="card p-4 mb-4 bg-dangerweak border border-danger/30">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <span class="pill off">provisioning_failed</span>
+                <p class="text-sm text-danger mt-2">
+                    {{ (provisioning_job.error_message if provisioning_job else None) or 'Онбординг упал.' }}
+                </p>
+            </div>
+            {% if provisioning_job %}
+            <form method="POST" action="{{ url_for('provisioning.restart', job_id=provisioning_job.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn danger">Restart</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="card p-4">
             <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Основное</h2>

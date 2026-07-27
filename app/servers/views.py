@@ -1,4 +1,6 @@
 """Server CRUD + HTMX endpoints."""
+import json
+
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
     jsonify, current_app, abort
@@ -8,12 +10,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
-from app.models import Server, Domain
+from app.models import Server, Domain, ProvisioningJob
 from app.auth.decorators import role_required
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
-    INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
+    INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS, TRANSIENT_FORM_FIELDS,
 )
+from app.services.provisioning import STEPS, OnboardingLockedError, start_onboarding
 
 servers_bp = Blueprint('servers', __name__)
 
@@ -86,11 +89,19 @@ def detail(server_id):
     """Server detail (HTML fragment for HTMX swap or full page)."""
     server = Server.query.get_or_404(server_id)
     domains = server.domains.all()
+    # Track C A3.3 п.4: последний job нужен для error_message + кнопки Restart.
+    provisioning_job = (
+        ProvisioningJob.query
+        .filter_by(server_id=server.id)
+        .order_by(ProvisioningJob.id.desc())
+        .first()
+    )
     return render_template(
         'servers/detail.html',
         server=server,
         domains=domains,
         passwords_visible=_passwords_visible(),
+        provisioning_job=provisioning_job,
     )
 
 
@@ -101,13 +112,36 @@ def create():
     """Add a new server. Available to all authenticated users."""
     form = ServerForm()
     if form.validate_on_submit():
+        do_onboarding = form.do_onboarding.data
+        bootstrap_password = form.bootstrap_password.data
+        # Track C A3 (Р4): транзиентные поля не должны попасть в модель через
+        # populate_obj — исключаем их из формы перед вызовом.
+        for field_name in TRANSIENT_FORM_FIELDS:
+            del form[field_name]
+
         server = Server()
         form.populate_obj(server)
         db.session.add(server)
         db.session.commit()
         flash(f'Сервер «{server.name}» добавлен.', 'success')
+
+        if do_onboarding:
+            try:
+                job = start_onboarding(server, current_user, bootstrap_password)
+            except OnboardingLockedError as exc:
+                # FIX-6c: не должно случаться при создании нового сервера (job
+                # ещё ни одного), но start_onboarding — общая точка входа.
+                flash(str(exc), 'error')
+                return redirect(url_for('servers.detail', server_id=server.id))
+            steps = json.loads(job.steps_json)['steps']
+            return render_template(
+                'servers/_provisioning_modal.html',
+                job=job, server=server, steps=steps, provisioning_steps=STEPS,
+            )
+
         return redirect(url_for('servers.list_servers'))
-    return render_template('servers/form.html', form=form, title='Новый сервер')
+    return render_template('servers/form.html', form=form, title='Новый сервер',
+                           show_onboarding=True)
 
 
 @servers_bp.route('/<int:server_id>/edit', methods=['GET', 'POST'])
@@ -118,11 +152,17 @@ def edit(server_id):
     server = Server.query.get_or_404(server_id)
     form = ServerForm(obj=server)
     if form.validate_on_submit():
+        # Онбординг при редактировании не запускается, но транзиентные поля
+        # всё равно исключаем — иначе populate_obj навесит их на модель.
+        for field_name in TRANSIENT_FORM_FIELDS:
+            del form[field_name]
         form.populate_obj(server)
         db.session.commit()
         flash(f'Сервер «{server.name}» обновлён.', 'success')
         return redirect(url_for('servers.list_servers'))
-    return render_template('servers/form.html', form=form, title=f'Редактирование: {server.name}')
+    return render_template('servers/form.html', form=form,
+                           title=f'Редактирование: {server.name}',
+                           show_onboarding=False)
 
 
 @servers_bp.route('/<int:server_id>/delete', methods=['POST'])

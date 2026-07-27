@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Онбординг: {{ server.name }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto card p-8">
+    <h1 class="text-xl font-semibold mb-2 text-ink">Онбординг сервера «{{ server.name }}»</h1>
+    <p class="text-sm text-muted mb-6">Job #{{ job.id }} · статус: <strong>{{ job.status }}</strong></p>
+
+    {% include 'servers/_provisioning_steps.html' %}
+
+    <a href="{{ url_for('servers.list_servers') }}" class="btn ghost mt-6 inline-block">К списку серверов</a>
+</div>
+{% endblock %}

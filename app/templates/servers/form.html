@@ -20,6 +20,14 @@
                 {{ form.password(class_='field mt-1 font-mono', autocomplete='new-password') }}
             </div>
             <div>
+                {{ form.ssh_username.label(class_='field-label') }}
+                {{ form.ssh_username(class_='field mt-1 font-mono') }}
+            </div>
+            <div>
+                {{ form.ssh_port.label(class_='field-label') }}
+                {{ form.ssh_port(class_='field mt-1 font-mono') }}
+            </div>
+            <div>
                 {{ form.provider.label(class_='field-label') }}
                 {{ form.provider(class_='field mt-1') }}
             </div>
@@ -55,6 +63,16 @@
                 <label class="inline-flex items-center gap-2">{{ form.has_vpn() }} {{ form.has_vpn.label.text }}</label>
                 <label class="inline-flex items-center gap-2">{{ form.active() }} {{ form.active.label.text }}</label>
             </div>
+            {# Онбординг — только при создании: на редактировании pipeline не запускается. #}
+            {% if show_onboarding %}
+            <div class="md:col-span-2 border-t border-line pt-4">
+                <label class="inline-flex items-center gap-2">{{ form.do_onboarding() }} {{ form.do_onboarding.label.text }}</label>
+                <div class="mt-2 max-w-xs">
+                    {{ form.bootstrap_password.label(class_='field-label') }}
+                    {{ form.bootstrap_password(class_='field mt-1 font-mono', autocomplete='new-password') }}
+                </div>
+            </div>
+            {% endif %}
         </div>
 
         <details class="mt-6 border-t border-line pt-4">

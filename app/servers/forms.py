@@ -1,9 +1,9 @@
 """Server-related forms."""
 from flask_wtf import FlaskForm
 from wtforms import (
-    StringField, TextAreaField, BooleanField, HiddenField, FieldList
+    StringField, TextAreaField, BooleanField, HiddenField, FieldList, IntegerField
 )
-from wtforms.validators import DataRequired, Optional
+from wtforms.validators import DataRequired, Optional, NumberRange
 
 
 class ServerForm(FlaskForm):
@@ -30,6 +30,12 @@ class ServerForm(FlaskForm):
     vps_management_url = StringField('VPS Management URL', validators=[Optional()])
     mgt_login = StringField('Management Login', validators=[Optional()])
     mgt_pass = StringField('Management Password', validators=[Optional()])
+    # Track C A3: онбординг pipeline (specs/track-c-plan-A3.md, Фаза A3.1)
+    ssh_username = StringField('Bootstrap-пользователь', default='root', validators=[Optional()])  # FIX-9: пишется в модель
+    ssh_port = IntegerField('SSH-порт', default=22,
+                            validators=[Optional(), NumberRange(min=1, max=65535)])
+    do_onboarding = BooleanField('Выполнить автоматический онбординг', default=False)  # транзиентное
+    bootstrap_password = StringField('Пароль для bootstrap', validators=[Optional()])  # транзиентное (FIX-5), в БД не хранится
 
 
 class ServerFilterForm(FlaskForm):
@@ -62,3 +68,7 @@ INLINE_EDITABLE_FIELDS = {
 # Boolean toggle fields. Сервисы (has_exim/has_squid/has_vpn) убраны из
 # inline-toggle в A1 — в A4 будут управляться через карточку сервера.
 INLINE_TOGGLE_FIELDS = {'active': 'active'}
+
+# Транзиентные поля ServerForm (Track C A3): в модель не пишутся, populate_obj
+# должен их исключить (см. views.py::create()).
+TRANSIENT_FORM_FIELDS = ('do_onboarding', 'bootstrap_password')

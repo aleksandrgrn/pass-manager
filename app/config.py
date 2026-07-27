@@ -75,6 +75,9 @@ class Config:
     VPS_MANAGER_API_URL = os.environ.get('VPS_MANAGER_API_URL', 'http://127.0.0.1:5000/api/svc')
     VPS_MANAGER_SERVICE_TOKEN = os.environ.get('VPS_MANAGER_SERVICE_TOKEN', '')
 
+    # Per-server root-ключи (Track C A3.2, FIX-2) — путь конфигурируем, без хардкода.
+    ANSIBLE_KEYS_DIR = os.environ.get('ANSIBLE_KEYS_DIR', '/etc/pass-manager/ansible/keys')
+
 
 class DevConfig(Config):
     """Development configuration."""
