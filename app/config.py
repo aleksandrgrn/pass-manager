@@ -67,9 +67,13 @@ class Config:
     # Local fallback admin
     LOCAL_ADMIN_USERNAME = os.environ.get('LOCAL_ADMIN_USERNAME', 'admin')
     LOCAL_ADMIN_PASSWORD = os.environ.get('LOCAL_ADMIN_PASSWORD', '')
-    
+
     # Pagination
     ITEMS_PER_PAGE = 50
+
+    # VPS Manager service-контракт (/api/svc, Track C A2)
+    VPS_MANAGER_API_URL = os.environ.get('VPS_MANAGER_API_URL', 'http://127.0.0.1:5000/api/svc')
+    VPS_MANAGER_SERVICE_TOKEN = os.environ.get('VPS_MANAGER_SERVICE_TOKEN', '')
 
 
 class DevConfig(Config):
