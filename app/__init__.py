@@ -1,10 +1,22 @@
 import logging
+import sqlite3
 
 from flask import Flask
 from flask_migrate import Migrate
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from app.config import config
 from app.extensions import db, login_manager, csrf
+
+
+# FIX-4 (Track C A3.1): WAL journal mode для SQLite. Без него polling-чтения
+# (endpoint прогресса онбординга) блокируют запись шагов pipeline'а. Только
+# для SQLite-соединений (isinstance-проверка), другие БД не затрагиваются.
+@event.listens_for(Engine, "connect")
+def _set_sqlite_wal_mode(dbapi_connection, connection_record):
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        dbapi_connection.execute('PRAGMA journal_mode=WAL')
 
 
 _INSECURE_SECRET_KEYS = frozenset({
@@ -103,9 +115,11 @@ def create_app(config_name=None):
     # Register blueprints
     from app.auth.views import auth_bp
     from app.servers.views import servers_bp
+    from app.provisioning.views import provisioning_bp
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(servers_bp, url_prefix='/servers')
+    app.register_blueprint(provisioning_bp, url_prefix='/provisioning')
 
     # Root redirect to servers list
     from flask import redirect, url_for

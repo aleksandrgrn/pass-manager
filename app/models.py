@@ -60,6 +60,8 @@ class Server(db.Model):
 
     ip_address = db.Column(db.String(45), nullable=True, index=True)
     ssh_username = db.Column(db.String(64), nullable=False, default='root')
+    # nullable: у старых записей порта нет — читать через `server.ssh_port or 22`.
+    ssh_port = db.Column(db.Integer, nullable=True)
     provider = db.Column(db.String(256), nullable=True)
     provider_login = db.Column(db.String(256), nullable=True)
     notes = db.Column(db.Text, nullable=True)
@@ -76,6 +78,10 @@ class Server(db.Model):
     web_login = db.Column(db.String(256), nullable=True)
     vps_management_url = db.Column(db.String(512), nullable=True)
     mgt_login = db.Column(db.String(256), nullable=True)
+    # Track C A3: онбординг pipeline (specs/track-c-plan-A3.md, Фаза A3.1)
+    vps_manager_server_id = db.Column(db.Integer, nullable=True)
+    provisioning_status = db.Column(db.String(20), nullable=False, default='ready')  # ready/provisioning/provisioning_failed
+    bootstrap_request_id = db.Column(db.String(64), nullable=True, index=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
