@@ -1,7 +1,8 @@
 """Server-related forms."""
 from flask_wtf import FlaskForm
 from wtforms import (
-    StringField, TextAreaField, BooleanField, HiddenField, FieldList, IntegerField
+    StringField, TextAreaField, BooleanField, HiddenField, FieldList, IntegerField,
+    SelectField
 )
 from wtforms.validators import DataRequired, Optional, NumberRange
 
@@ -9,6 +10,10 @@ from wtforms.validators import DataRequired, Optional, NumberRange
 class ServerForm(FlaskForm):
     """Form for creating/editing a server (full record)."""
     name = StringField('Название', validators=[DataRequired(message='Название обязательно')])
+    # Track C B1: без группы сервер видит только суперадмин, поэтому админ,
+    # заведя сервер, тут же терял бы его из виду. Варианты подставляет view —
+    # список зависит от того, кто именно заполняет форму.
+    group_id = SelectField('Группа', coerce=int, validators=[Optional()])
     password = StringField('Пароль', validators=[Optional()])
     ip_address = StringField('IP-адрес', validators=[Optional()])
     provider = StringField('Провайдер', validators=[Optional()])

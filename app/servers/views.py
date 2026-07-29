@@ -10,7 +10,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
-from app.models import Server, Domain, ProvisioningJob
+from app.models import (
+    Server, Domain, ProvisioningJob, ServerGroup, ServerGroupMembership,
+)
+from app.access.rules import assert_can_access_server, visible_servers
 from app.auth.decorators import role_required
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
@@ -52,6 +55,45 @@ def _passwords_visible():
     return current_user.is_authenticated and current_user.can_view_passwords
 
 
+NO_GROUP_CHOICE = 0
+
+
+def _group_choices():
+    """Варианты для поля «Группа» — зависят от того, кто заполняет форму.
+
+    Суперадмину доступны все группы и вариант «без группы». Админу — только те
+    его группы, которым разрешено заводить серверы (Р6); варианта «без группы»
+    у него нет: сервер без группы видит один суперадмин, и админ, заведя такой,
+    сразу потерял бы его из списка.
+    """
+    if current_user.is_superadmin:
+        groups = ServerGroup.query.order_by(ServerGroup.name).all()
+        return [(NO_GROUP_CHOICE, '— без группы —')] + [(g.id, g.name) for g in groups]
+
+    groups = (
+        ServerGroup.query
+        .join(ServerGroupMembership, ServerGroupMembership.group_id == ServerGroup.id)
+        .filter(
+            ServerGroupMembership.user_id == current_user.id,
+            ServerGroup.can_create_servers.is_(True),
+        )
+        .order_by(ServerGroup.name)
+        .all()
+    )
+    return [(g.id, g.name) for g in groups]
+
+
+def _get_server_or_403(server_id):
+    """Достать сервер и убедиться, что он доступен текущему пользователю.
+
+    Отдельный хелпер, а не пара строк в каждом обработчике: server-scoped
+    маршрутов уже шесть, и забыть проверку в седьмом — вопрос времени.
+    """
+    server = Server.query.get_or_404(server_id)
+    assert_can_access_server(server)
+    return server
+
+
 @servers_bp.route('/')
 @login_required
 def list_servers():
@@ -60,7 +102,7 @@ def list_servers():
     sort = request.args.get('sort', 'id')
     direction = request.args.get('dir', 'asc')
 
-    query = Server.query
+    query = visible_servers(current_user)
     query = _apply_filters(query, form)
 
     # Sorting with whitelist
@@ -87,7 +129,7 @@ def list_servers():
 @login_required
 def detail(server_id):
     """Server detail (HTML fragment for HTMX swap or full page)."""
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     domains = server.domains.all()
     # Track C A3.3 п.4: последний job нужен для error_message + кнопки Restart.
     provisioning_job = (
@@ -111,6 +153,12 @@ def detail(server_id):
 def create():
     """Add a new server. Available to all authenticated users."""
     form = ServerForm()
+    form.group_id.choices = _group_choices()
+    if not form.group_id.choices:
+        # Р6: возможность заводить серверы — свойство группы. Ни одной подходящей
+        # группы нет → и заводить некуда, форму показывать бессмысленно.
+        abort(403, description='Ни одна из ваших групп не может заводить серверы')
+
     if form.validate_on_submit():
         do_onboarding = form.do_onboarding.data
         bootstrap_password = form.bootstrap_password.data
@@ -121,6 +169,8 @@ def create():
 
         server = Server()
         form.populate_obj(server)
+        if server.group_id == NO_GROUP_CHOICE:
+            server.group_id = None  # SelectField отдаёт 0, в БД это NULL
         db.session.add(server)
         db.session.commit()
         flash(f'Сервер «{server.name}» добавлен.', 'success')
@@ -149,14 +199,23 @@ def create():
 @role_required('admin', 'superadmin')
 def edit(server_id):
     """Edit a server (full form)."""
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     form = ServerForm(obj=server)
+    if current_user.is_superadmin:
+        form.group_id.choices = _group_choices()
+    else:
+        # Р7: перекладывать сервер между командами — дело суперадмина. Поле
+        # убираем целиком, иначе populate_obj затрёт группу тем, что пришло.
+        del form['group_id']
+
     if form.validate_on_submit():
         # Онбординг при редактировании не запускается, но транзиентные поля
         # всё равно исключаем — иначе populate_obj навесит их на модель.
         for field_name in TRANSIENT_FORM_FIELDS:
             del form[field_name]
         form.populate_obj(server)
+        if server.group_id == NO_GROUP_CHOICE:
+            server.group_id = None
         db.session.commit()
         flash(f'Сервер «{server.name}» обновлён.', 'success')
         return redirect(url_for('servers.list_servers'))
@@ -170,7 +229,7 @@ def edit(server_id):
 @role_required('admin', 'superadmin')
 def delete(server_id):
     """Delete a server."""
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     name = server.name
     db.session.delete(server)
     db.session.commit()
@@ -198,7 +257,7 @@ def edit_field(server_id):
     Expected form fields: field=<name>, value=<new value>
     Returns the updated cell.
     """
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     field_name = (request.form.get('field') or '').strip()
     value = request.form.get('value', '').strip()
 
@@ -231,7 +290,7 @@ def edit_field(server_id):
 @role_required('admin', 'superadmin')
 def toggle_field(server_id):
     """Toggle a boolean field (services, active) via HTMX."""
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     field_name = (request.form.get('field') or '').strip()
 
     attr = INLINE_TOGGLE_FIELDS.get(field_name)
@@ -256,7 +315,7 @@ def toggle_field(server_id):
 @role_required('admin', 'superadmin')
 def add_domain(server_id):
     """Add a domain to a server via HTMX."""
-    server = Server.query.get_or_404(server_id)
+    server = _get_server_or_403(server_id)
     domain_value = (request.form.get('domain') or '').strip()
     if not domain_value:
         abort(400, description='Пустой домен')
@@ -273,6 +332,8 @@ def add_domain(server_id):
 def delete_domain(domain_id):
     """Delete a domain via HTMX."""
     domain = Domain.query.get_or_404(domain_id)
+    # Здесь достаётся домен, а не сервер — проверять надо владельца.
+    assert_can_access_server(domain.server)
     db.session.delete(domain)
     db.session.commit()
     return '', 204

@@ -82,6 +82,8 @@ class Server(db.Model):
     vps_manager_server_id = db.Column(db.Integer, nullable=True)
     provisioning_status = db.Column(db.String(20), nullable=False, default='ready')  # ready/provisioning/provisioning_failed
     bootstrap_request_id = db.Column(db.String(64), nullable=True, index=True)
+    # Track C B1: группа-владелец. NULL = сервер ничей, его видит только superadmin (Р3).
+    group_id = db.Column(db.Integer, db.ForeignKey('server_groups.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
@@ -234,3 +236,44 @@ class AccessAssignment(db.Model):
 
     def __repr__(self):
         return f'<AccessAssignment server={self.server_id} user={self.user_id} state={self.state}>'
+
+
+class ServerGroup(db.Model):
+    """Команда-владелец серверов (specs/track-c-access-design.md, Р3).
+
+    Из версии в архитектуре §6.1.4 убраны display_name (дублирует name), description
+    и ad_group_dn — последнее обслуживает отложенный AD-синк, мёртвых полей не заводим."""
+    __tablename__ = 'server_groups'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    # Р6: возможность — свойство группы, а не роли. Стоит флаг — у людей группы
+    # появляется кнопка «Добавить сервер», не стоит — кнопки нет.
+    can_create_servers = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    servers = db.relationship('Server', backref='group')
+    memberships = db.relationship('ServerGroupMembership', backref='group',
+                                  cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<ServerGroup {self.name}>'
+
+
+class ServerGroupMembership(db.Model):
+    """Членство человека в группе: один человек — много групп (Р3)."""
+    __tablename__ = 'server_group_memberships'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'group_id', name='uq_user_group'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('server_groups.id'), nullable=False, index=True)
+    added_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    added_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    user = db.relationship('User', backref='group_memberships', foreign_keys=[user_id])
+    added_by_user = db.relationship('User', foreign_keys=[added_by])
+
+    def __repr__(self):
+        return f'<ServerGroupMembership user={self.user_id} group={self.group_id}>'

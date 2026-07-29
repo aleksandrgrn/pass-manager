@@ -88,9 +88,38 @@ def _make_user(db, username: str, role: str, password: str = 'pass123'):
 
 
 @pytest.fixture()
-def admin_user(db):
+def default_group(db):
+    """Группа по умолчанию: в неё попадают admin_user и sample_server.
+
+    Появилась в B1: видимость сервера теперь определяется членством в группе,
+    а не ролью. Без общей группы admin не видит ни одного сервера, и весь набор
+    тестов, написанный до B1, начинает получать 403.
+    """
+    from app.models import ServerGroup
+    # can_create_servers=True — иначе Р6 не пустит admin'а на /servers/new,
+    # и половина набора тестов упрётся в 403 вместо проверки своей логики.
+    group = ServerGroup(name='test-group', can_create_servers=True)
+    db.session.add(group)
+    db.session.commit()
+    return group
+
+
+@pytest.fixture()
+def admin_user(db, default_group):
     """Пользователь с ролью admin (управляет серверами, паролей не видит)."""
-    return _make_user(db, username='admin_test', role='admin')
+    from app.models import ServerGroupMembership
+    user = _make_user(db, username='admin_test', role='admin')
+    db.session.add(ServerGroupMembership(
+        user_id=user.id, group_id=default_group.id, added_by=user.id,
+    ))
+    db.session.commit()
+    return user
+
+
+@pytest.fixture()
+def groupless_admin(db):
+    """admin без единой группы — видит пустой список, на любой сервер получает 403."""
+    return _make_user(db, username='groupless_test', role='admin')
 
 
 @pytest.fixture()
@@ -142,10 +171,14 @@ def superadmin_client(app: Flask, superadmin_user) -> FlaskClient:
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture()
-def sample_server(db):
-    """Сервер с паролями и двумя доменами для тестов RBAC и HTMX."""
+def sample_server(db, default_group):
+    """Сервер с паролями и двумя доменами для тестов RBAC и HTMX.
+
+    С B1 лежит в default_group — той же, где состоит admin_user, иначе тот
+    его просто не увидит."""
     from app.models import Server, Domain
     server = Server(
+        group_id=default_group.id,
         name='vps-test-01',
         ip_address='192.0.2.10',
         provider='TestProvider',

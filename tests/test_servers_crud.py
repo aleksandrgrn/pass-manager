@@ -169,11 +169,11 @@ class TestPagination:
             )
             assert pagination.pages == expected_pages
 
-    def test_60_servers_produce_two_pages_in_html(self, app, admin_client):
+    def test_60_servers_produce_two_pages_in_html(self, app, admin_client, default_group):
         """Реальный эндпоинт /servers/ при 60 серверах показывает 2 страницы."""
         app.config['ITEMS_PER_PAGE'] = 50
         db.session.add_all([
-            Server(name=f'srv-{i:03d}') for i in range(60)
+            Server(name=f'srv-{i:03d}', group_id=default_group.id) for i in range(60)
         ])
         db.session.commit()
 
