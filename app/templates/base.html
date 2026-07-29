@@ -240,6 +240,9 @@
                 {% if current_user.is_authenticated %}
                 <span class="nav-sep text-sm hidden sm:inline">|</span>
                 <a href="{{ url_for('servers.list_servers') }}" class="nav-link text-sm hidden sm:inline">Серверы</a>
+                {% if current_user.is_superadmin %}
+                <a href="{{ url_for('access.index') }}" class="nav-link text-sm hidden sm:inline">Доступ</a>
+                {% endif %}
                 {% endif %}
             </div>
             <div class="flex items-center space-x-4 text-sm">

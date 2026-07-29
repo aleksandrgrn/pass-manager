@@ -116,10 +116,12 @@ def create_app(config_name=None):
     from app.auth.views import auth_bp
     from app.servers.views import servers_bp
     from app.provisioning.views import provisioning_bp
+    from app.access.views import access_bp
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(servers_bp, url_prefix='/servers')
     app.register_blueprint(provisioning_bp, url_prefix='/provisioning')
+    app.register_blueprint(access_bp, url_prefix='/access')
 
     # Root redirect to servers list
     from flask import redirect, url_for

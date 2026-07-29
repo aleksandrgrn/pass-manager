@@ -1,0 +1,155 @@
+{# Три блока экрана «Доступ» (specs/track-c-access-design.md, «Экраны», superadmin).
+   Рендерится и как часть access/index.html, и напрямую вьюхами-мутациями
+   (HTMX-подмена #access-content целиком) — состояние блоков взаимозависимо. #}
+
+{% if error %}
+<p class="text-danger text-sm">{{ error }}</p>
+{% endif %}
+
+<div class="flex flex-col gap-4">
+
+    <!-- Группы -->
+    <div class="card p-4">
+        <h2 class="text-sm font-semibold text-ink mb-3">Группы</h2>
+        <div class="table-wrap">
+            <table class="tbl min-w-full">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th class="text-center">Людей</th>
+                        <th class="text-center">Серверов</th>
+                        <th>Может заводить серверы</th>
+                        <th class="text-center">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in groups %}
+                    <tr>
+                        <td class="font-medium text-ink">{{ group.name }}</td>
+                        <td class="cell-num text-center">{{ group.memberships|length }}</td>
+                        <td class="cell-num text-center">{{ group.servers|length }}</td>
+                        <td>
+                            <button hx-post="{{ url_for('access.toggle_group_create', group_id=group.id) }}"
+                                    hx-target="#access-content" hx-swap="innerHTML"
+                                    class="pill {% if group.can_create_servers %}on{% else %}off{% endif %}">
+                                {{ 'да' if group.can_create_servers else 'нет' }}
+                            </button>
+                        </td>
+                        <td class="text-center">
+                            <div class="row-actions">
+                                <button hx-post="{{ url_for('access.delete_group', group_id=group.id) }}"
+                                        hx-target="#access-content" hx-swap="innerHTML"
+                                        hx-confirm="Удалить группу «{{ group.name }}»? Серверы останутся, но станут ничьими."
+                                        class="icon-btn danger" aria-label="Удалить группу {{ group.name }}" title="Удалить">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-faint" style="padding: 24px 12px;">Групп ещё нет</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <form hx-post="{{ url_for('access.create_group') }}" hx-target="#access-content" hx-swap="innerHTML"
+              class="mt-3 flex flex-wrap items-center gap-2">
+            <input type="text" name="name" class="field w-auto" placeholder="Название группы" required>
+            <label class="inline-flex items-center gap-2 text-sm text-muted">
+                <input type="checkbox" name="can_create_servers">
+                может заводить серверы
+            </label>
+            <button type="submit" class="btn primary">+ Новая группа</button>
+        </form>
+    </div>
+
+    <!-- Без группы -->
+    <div class="card p-4">
+        <h2 class="text-sm font-semibold text-ink mb-3">
+            Без группы <span class="text-faint font-normal">({{ groupless_users|length }})</span>
+            <span class="text-faint font-normal text-xs">— новые, кто заходил</span>
+        </h2>
+        {% if groupless_users %}
+        <div class="table-wrap">
+            <table class="tbl min-w-full">
+                <thead>
+                    <tr>
+                        <th>Логин</th>
+                        <th>ФИО</th>
+                        <th>Первый вход</th>
+                        <th>В группу</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in groupless_users %}
+                    <tr>
+                        <td class="cell-mono">{{ user.username }}</td>
+                        <td>{{ user.display_name or '—' }}</td>
+                        <td class="cell-num">{{ user.created_at.strftime('%d.%m') if user.created_at else '—' }}</td>
+                        <td>
+                            <select name="group_id" class="field w-auto"
+                                    hx-post="{{ url_for('access.add_membership', user_id=user.id) }}"
+                                    hx-target="#access-content" hx-swap="innerHTML">
+                                <option value="">В группу ▾</option>
+                                {% for group in groups %}
+                                <option value="{{ group.id }}">{{ group.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-faint text-sm">Нет новых людей без группы.</p>
+        {% endif %}
+    </div>
+
+    <!-- Люди -->
+    <div class="card p-4">
+        <h2 class="text-sm font-semibold text-ink mb-3">Люди</h2>
+        <div class="table-wrap">
+            <table class="tbl min-w-full">
+                <thead>
+                    <tr>
+                        <th>Логин</th>
+                        <th>ФИО</th>
+                        <th>Группы</th>
+                        <th class="text-center">Доступов</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in member_users %}
+                    <tr>
+                        <td class="cell-mono">{{ user.username }}</td>
+                        <td>{{ user.display_name or '—' }}</td>
+                        <td>
+                            {% for m in user.group_memberships %}
+                            <span class="inline-flex items-center gap-1 mr-1 mb-0.5">
+                                <span class="pill on">{{ m.group.name }}</span>
+                                <button hx-post="{{ url_for('access.remove_membership', user_id=user.id, group_id=m.group_id) }}"
+                                        hx-target="#access-content" hx-swap="innerHTML"
+                                        hx-confirm="Вывести {{ user.username }} из «{{ m.group.name }}»?"
+                                        class="icon-btn danger" aria-label="Вывести {{ user.username }} из {{ m.group.name }}" title="Вывести из группы">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                                </button>
+                            </span>
+                            {% endfor %}
+                        </td>
+                        <td class="cell-num text-center">{{ active_grants_by_user.get(user.id, 0) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-faint" style="padding: 24px 12px;">Нет записей</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>

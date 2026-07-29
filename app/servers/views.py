@@ -114,6 +114,12 @@ def list_servers():
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     servers = pagination.items
 
+    # B1.4: пустой список у человека без единой группы — не поломка, а следствие
+    # того, что ему ещё не выдали доступ. Отдельное сообщение вместо «Нет записей».
+    no_group_access = (
+        not current_user.is_superadmin and not current_user.group_memberships
+    )
+
     return render_template(
         'servers/list.html',
         servers=servers,
@@ -122,6 +128,7 @@ def list_servers():
         sort=sort,
         direction=direction,
         passwords_visible=_passwords_visible(),
+        no_group_access=no_group_access,
     )
 
 

@@ -14,7 +14,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-from flask import Flask
+from flask import Flask, g
 from flask.testing import FlaskClient
 
 from app import create_app
@@ -47,6 +47,16 @@ def app() -> Flask:
     )
     # In-memory rate-limit у каждого процесса свой; сбрасываем перед app start.
     _reset_login_rate_limit()
+
+    # Ниже фикстура держит ОДИН app_context на весь тест, а flask_login кэширует
+    # загруженного пользователя в g._login_user. Кэш живёт на app-контексте, то есть
+    # переживает запросы: второй клиент с другой сессией получал бы пользователя
+    # первого, и тест молча проверял бы не то. Сбрасываем перед каждым запросом —
+    # тогда каждый резолвит своего пользователя из своей же сессии, как в проде,
+    # где app-контекст живёт ровно один запрос.
+    @app.before_request
+    def _drop_cached_login_user():
+        g.pop('_login_user', None)
 
     with app.app_context():
         _db.create_all()
