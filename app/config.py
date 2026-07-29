@@ -63,6 +63,9 @@ class Config:
     LDAP_BIND_DN = os.environ.get('LDAP_BIND_DN', '')
     LDAP_BIND_PASSWORD = os.environ.get('LDAP_BIND_PASSWORD', '')
     LDAP_USER_SEARCH_FILTER = os.environ.get('LDAP_USER_SEARCH_FILTER', '(sAMAccountName={username})')
+    # PEM с корневым сертификатом внутреннего УЦ. Пусто — используется системное
+    # хранилище доверенных корней.
+    LDAP_CA_CERT_FILE = os.environ.get('LDAP_CA_CERT_FILE', '')
 
     # Local fallback admin
     LOCAL_ADMIN_USERNAME = os.environ.get('LOCAL_ADMIN_USERNAME', 'admin')
