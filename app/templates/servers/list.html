@@ -63,7 +63,9 @@
                 {% include 'servers/_row.html' %}
                 {% else %}
                 <tr>
-                    <td colspan="13" class="text-center text-faint" style="padding: 24px 12px;">Нет записей</td>
+                    <td colspan="13" class="text-center text-faint" style="padding: 24px 12px;">
+                        {% if no_group_access %}У вас нет доступа к серверам. Обратитесь к администратору.{% else %}Нет записей{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

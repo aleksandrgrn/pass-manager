@@ -67,6 +67,28 @@ class TestListVisibility:
         assert 'vps-test-01' not in body
 
 
+class TestEmptyStateMessage:
+    """B1.4: пустой список серверов различает две причины пустоты."""
+
+    def test_groupless_user_sees_access_denied_message(self, app, groupless_admin):
+        """Человек без единой группы — это не поломка, а следствие того,
+        что ему ещё не выдали доступ (Р8: новичок появляется без групп)."""
+        from tests.conftest import login_as
+        client = app.test_client()
+        login_as(client, 'groupless_test')
+
+        body = client.get('/servers/').get_data(as_text=True)
+        assert 'У вас нет доступа к серверам' in body
+        assert 'Нет записей' not in body
+
+    def test_user_with_group_sees_generic_empty_message(self, admin_client, default_group):
+        """admin_user состоит в default_group, но в ней нет серверов —
+        значит список пуст по обычной причине, не по отсутствию доступа."""
+        body = admin_client.get('/servers/').get_data(as_text=True)
+        assert 'Нет записей' in body
+        assert 'У вас нет доступа' not in body
+
+
 class TestServerScopedRoutesRejectForeign:
     """IDOR по прямой ссылке: каждый маршрут обязан проверять доступ сам."""
 
