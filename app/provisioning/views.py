@@ -5,15 +5,32 @@
 """
 import json
 
-from flask import Blueprint, render_template
-from flask_login import login_required
+from flask import Blueprint, abort, render_template
+from flask_login import current_user, login_required
 
+from app.access.rules import assert_can_access_server
 from app.auth.decorators import role_required
 from app.extensions import db
 from app.models import ProvisioningJob, Server
 from app.services.provisioning import STEPS, restart_job, run_next_step
 
 provisioning_bp = Blueprint('provisioning', __name__)
+
+
+def _get_job_or_403(job_id):
+    """Достать job и убедиться, что его сервер доступен текущему пользователю.
+
+    До B1 проверки здесь не было — RBAC был плоский. Но pipeline меняет root-пароль
+    на живой машине, так что чужой job гонять нельзя тем более, чем чужую карточку
+    смотреть. Батчевые job'ы (server_id=NULL, задел под A5) — только суперадмину.
+    """
+    job = ProvisioningJob.query.get_or_404(job_id)
+    server = db.session.get(Server, job.server_id) if job.server_id else None
+    if server is not None:
+        assert_can_access_server(server)
+    elif not current_user.is_superadmin:
+        abort(403, description='Батчевые задачи доступны только суперадмину')
+    return job
 
 
 @provisioning_bp.route('/jobs/<int:job_id>/step', methods=['POST'])
@@ -24,11 +41,8 @@ def run_step(job_id):
 
     A3.3 п.1: раньше рендерился весь modal ради одного div'а (hx-select его
     вырезал). Теперь фрагмент рендерится и возвращается напрямую.
-
-    Доступ к чужому job отдельно не проверяется (RBAC плоский, R1) — только
-    существование job (иначе 404).
     """
-    job = ProvisioningJob.query.get_or_404(job_id)
+    job = _get_job_or_403(job_id)
     steps = run_next_step(job)
     return render_template(
         'servers/_provisioning_steps.html',
@@ -45,7 +59,7 @@ def restart(job_id):
     Переиспользует job, продолжает обычным поллингом — отдаёт полную
     страницу modal'а (как при первом запуске из servers.create).
     """
-    job = ProvisioningJob.query.get_or_404(job_id)
+    job = _get_job_or_403(job_id)
     restart_job(job)
     server = db.session.get(Server, job.server_id)
     steps = json.loads(job.steps_json)['steps']

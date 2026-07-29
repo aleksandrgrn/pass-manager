@@ -17,8 +17,11 @@ from app.services.provisioning import (
 from app.services.rotate import RotateError
 
 
-def _make_server(db, name='vps-onboard-01', ip='192.0.2.50'):
-    server = Server(name=name, ip_address=ip, ssh_username='root', active=True)
+def _make_server(db, name='vps-onboard-01', ip='192.0.2.50', group=None):
+    """group нужен только тестам, которые ходят по HTTP: с B1 admin видит
+    сервер, лишь если тот в его группе. Тесты сервисного слоя обходятся без него."""
+    server = Server(name=name, ip_address=ip, ssh_username='root', active=True,
+                    group_id=group.id if group else None)
     db.session.add(server)
     db.session.commit()
     return server
@@ -351,14 +354,14 @@ class TestRotateStep:
 
 class TestEditDoesNotOnboard:
 
-    def test_edit_page_has_no_onboarding_block(self, admin_client, db):
-        server = _make_server(db, name='vps-edit-01', ip='198.51.100.80')
+    def test_edit_page_has_no_onboarding_block(self, admin_client, db, default_group):
+        server = _make_server(db, name='vps-edit-01', ip='198.51.100.80', group=default_group)
         resp = admin_client.get(f'/servers/{server.id}/edit')
         assert resp.status_code == 200
         assert b'do_onboarding' not in resp.data
 
-    def test_edit_does_not_create_job_or_leak_transient_fields(self, admin_client, db):
-        server = _make_server(db, name='vps-edit-02', ip='198.51.100.81')
+    def test_edit_does_not_create_job_or_leak_transient_fields(self, admin_client, db, default_group):
+        server = _make_server(db, name='vps-edit-02', ip='198.51.100.81', group=default_group)
         resp = admin_client.post(f'/servers/{server.id}/edit', data={
             'name': 'vps-edit-02-renamed',
             'ip_address': '198.51.100.81',
@@ -561,9 +564,9 @@ def _make_failed_job(db, server, user, failed_step='rotate'):
 
 class TestProvisioningFailedUI:
 
-    def test_detail_shows_error_and_restart_button(self, admin_client, db):
+    def test_detail_shows_error_and_restart_button(self, admin_client, db, default_group):
         user = _make_user(db, 'u-ui')
-        server = _make_server(db, name='vps-ui-01')
+        server = _make_server(db, name='vps-ui-01', group=default_group)
         job = _make_failed_job(db, server, user)
 
         resp = admin_client.get(f'/servers/{server.id}')
@@ -573,10 +576,10 @@ class TestProvisioningFailedUI:
         assert b'rotate_failed: boom' in resp.data
         assert f'/provisioning/jobs/{job.id}/restart'.encode() in resp.data
 
-    def test_restart_endpoint_resumes_pipeline(self, admin_client, db, tmp_path, app):
+    def test_restart_endpoint_resumes_pipeline(self, admin_client, db, tmp_path, app, default_group):
         app.config['ANSIBLE_KEYS_DIR'] = str(tmp_path)
         user = _make_user(db, 'u-ui-2')
-        server = _make_server(db, name='vps-ui-02')
+        server = _make_server(db, name='vps-ui-02', group=default_group)
         job = _make_failed_job(db, server, user)
 
         resp = admin_client.post(f'/provisioning/jobs/{job.id}/restart')
