@@ -66,6 +66,10 @@ class Config:
     # PEM с корневым сертификатом внутреннего УЦ. Пусто — используется системное
     # хранилище доверенных корней.
     LDAP_CA_CERT_FILE = os.environ.get('LDAP_CA_CERT_FILE', '')
+    # Строка ciphers для OpenSSL. Нужна там, где внутренняя PKI на ключах слабее
+    # 2048 бит: системный уровень безопасности 2 отвергает такую цепочку даже
+    # при валидной подписи. Пусто — системные умолчания, ничего не понижаем.
+    LDAP_TLS_CIPHERS = os.environ.get('LDAP_TLS_CIPHERS', '')
 
     # Local fallback admin
     LOCAL_ADMIN_USERNAME = os.environ.get('LOCAL_ADMIN_USERNAME', 'admin')

@@ -30,6 +30,7 @@ def authenticate_ldap(username, password, app):
     ldap_bind_password = app.config.get('LDAP_BIND_PASSWORD', '')
     ldap_user_search_filter = app.config.get('LDAP_USER_SEARCH_FILTER', '(sAMAccountName={username})')
     ldap_ca_cert_file = app.config.get('LDAP_CA_CERT_FILE', '')
+    ldap_tls_ciphers = app.config.get('LDAP_TLS_CIPHERS', '')
 
     if not ldap_server:
         logger.warning('LDAP_SERVER not configured')
@@ -65,6 +66,11 @@ def authenticate_ldap(username, password, app):
             tls_config = Tls(
                 validate=ssl.CERT_REQUIRED,
                 ca_certs_file=ldap_ca_cert_file or None,
+                # Понижение уровня нужно только под слабую внутреннюю PKI
+                # (RSA-1024): системный уровень 2 отвергает её при валидной
+                # подписи. Проверка цепочки при этом НЕ отключается — она
+                # остаётся CERT_REQUIRED и привязана к ca_certs_file.
+                ciphers=ldap_tls_ciphers or None,
             )
             server = Server(
                 ldap_server,
