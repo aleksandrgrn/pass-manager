@@ -85,6 +85,43 @@ class TestCertificateIsVerified:
 
         assert tls.call_args.kwargs['ca_certs_file'] is None
 
+    def test_tls_ciphers_passed_through(self, app):
+        """Непустой LDAP_TLS_CIPHERS должен дойти до Tls как есть —
+        именно по этой строке OpenSSL понижает seclevel для слабой PKI."""
+        _configure(app, LDAP_TLS_CIPHERS='DEFAULT@SECLEVEL=1')
+
+        with patch('app.auth.ldap_auth.Tls') as tls, \
+                patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection'):
+            authenticate_ldap('ivanov', 'pw', app)
+
+        assert tls.call_args.kwargs['ciphers'] == 'DEFAULT@SECLEVEL=1'
+
+    def test_empty_tls_ciphers_becomes_none(self, app):
+        """Пустая строка должна стать None, иначе OpenSSL получит мусорный
+        пустой список шифров вместо системных умолчаний."""
+        _configure(app, LDAP_TLS_CIPHERS='')
+
+        with patch('app.auth.ldap_auth.Tls') as tls, \
+                patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection'):
+            authenticate_ldap('ivanov', 'pw', app)
+
+        assert tls.call_args.kwargs['ciphers'] is None
+
+    def test_tls_ciphers_does_not_disable_validation(self, app):
+        """Главный инвариант: понижение seclevel ≠ отключение проверки.
+        При заданном LDAP_TLS_CIPHERS в Tls всё ещё уходит CERT_REQUIRED —
+        цепочка проверяется, просто по более мягкому уровню."""
+        _configure(app, LDAP_TLS_CIPHERS='DEFAULT@SECLEVEL=1')
+
+        with patch('app.auth.ldap_auth.Tls') as tls, \
+                patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection'):
+            authenticate_ldap('ivanov', 'pw', app)
+
+        assert tls.call_args.kwargs['validate'] == ssl.CERT_REQUIRED
+
 
 class TestPlaintextIsLoud:
     """Работа без SSL допустима технически, но должна быть заметна в логах."""
