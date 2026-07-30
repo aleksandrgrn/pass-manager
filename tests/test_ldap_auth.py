@@ -133,3 +133,41 @@ class TestPlaintextIsLoud:
             authenticate_ldap('ivanov', 'pw', app)
 
         assert 'открытым текстом' in caplog.text
+
+
+class TestServerConstructorIsReached:
+    """Конструктор Server(...) реально вызывается и не падает на сигнатуре.
+
+    Все остальные тесты в этом файле патчат Server, поэтому реальный конструктор
+    не вызывается — это и позволило багу с receive_timeout прожить от A1 до B1:
+    TypeError на Server(...) глотался except'ом, функция возвращала None,
+    а тест (с моком Server) был зелёным.
+
+    Этот тест не патчит Server. Connection патчится, чтобы не идти в сеть —
+    реальный Server(...) конструируется, но connect_timeout не даёт зависнуть.
+    Если в Server(...) снова передать несуществующий kwarg — упадёт здесь, а не
+    тихо в боевом входе.
+
+    Суть проверки — НЕ возвращаемое значение (None получается и при TypeError,
+    и при реальной сетевой ошибке), а отсутствие TypeError в логе.
+    """
+
+    def test_unreachable_host_returns_none_without_typeerror(self, app, caplog):
+        _configure(app, LDAP_SERVER='nonexistent.invalid.local')
+
+        # Server НЕ патчим — реальный конструктор должен вызваться и не упасть.
+        # Connection патчим — без него pytest пошёл бы в реальный DNS/сеть.
+        # Настраиваем мок так, чтобы search() не находил пользователя — это
+        # даёт честный return None из «if not bind_conn.entries: return None»,
+        # а не «None из except на сетевой ошибке». Возврат None сам по себе
+        # ничего не доказывает (он получается и при TypeError), суть — в
+        # проверке лога ниже.
+        with patch('app.auth.ldap_auth.Connection') as conn:
+            conn.return_value.entries = []
+            result = authenticate_ldap('ivanov', 'pw', app)
+
+        assert result is None
+        # Ключевая проверка: отказ не должен быть TypeError на сигнатуре
+        # Server(...). Именно это условие не выполнялось на сломанном коде
+        # с receive_timeout в Server.
+        assert 'unexpected keyword argument' not in caplog.text
