@@ -77,14 +77,22 @@ def authenticate_ldap(username, password, app):
                 port=ldap_port,
                 use_ssl=True,
                 tls=tls_config,
-                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+                # У Server параметр называется connect_timeout; receive_timeout есть
+                # только у Connection. Перепутанные местами, они стоили проекту
+                # неработающего входа в AD от A1 до B1 — TypeError глотался
+                # except'ом ниже, и функция молча возвращала None.
+                connect_timeout=LDAP_RECEIVE_TIMEOUT,
             )
         else:
             server = Server(
                 ldap_server,
                 port=ldap_port,
                 use_ssl=False,
-                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+                # У Server параметр называется connect_timeout; receive_timeout есть
+                # только у Connection. Перепутанные местами, они стоили проекту
+                # неработающего входа в AD от A1 до B1 — TypeError глотался
+                # except'ом ниже, и функция молча возвращала None.
+                connect_timeout=LDAP_RECEIVE_TIMEOUT,
             )
 
         # First bind with service account to search for user
@@ -106,7 +114,10 @@ def authenticate_ldap(username, password, app):
             search_base=search_base,
             search_filter=search_filter,
             search_scope=SUBTREE,
-            attributes=['sAMAccountName', 'displayName', 'mail', 'dn']
+            # 'dn' здесь быть не должно: у Server get_info=SCHEMA по умолчанию, ldap3
+            # сверяет имена со схемой и бросает LDAPAttributeError на невалидное имя.
+            # DN — свойство записи (entry.entry_dn ниже), а не атрибут AD.
+            attributes=['sAMAccountName', 'displayName', 'mail']
         )
 
         if not bind_conn.entries:
