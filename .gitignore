@@ -25,6 +25,7 @@ opencode.jsonc
 .playwright-cli/
 tmp/
 .tmp/
+.scratch/
 snapshots/
 /legacy/
 /CONTINUITY.md
