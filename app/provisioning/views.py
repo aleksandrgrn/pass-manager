@@ -5,7 +5,7 @@
 """
 import json
 
-from flask import Blueprint, abort, render_template
+from flask import Blueprint, abort, redirect, render_template, url_for
 from flask_login import current_user, login_required
 
 from app.access.rules import assert_can_access_server
@@ -33,6 +33,26 @@ def _get_job_or_403(job_id):
     return job
 
 
+@provisioning_bp.route('/jobs/<int:job_id>', methods=['GET'])
+@login_required
+@role_required('admin', 'superadmin')
+def job_page(job_id):
+    """Страница онбординга — единственный вход на неё по GET.
+
+    Сюда редиректят и servers.create, и restart. Раньше каждый рисовал её
+    прямо в ответ на POST, из-за чего в истории браузера оставалась запись,
+    уже создавшая сервер (или уже перезапустившая pipeline): F5 предлагал
+    повторить отправку и повтор делал это второй раз.
+    """
+    job = _get_job_or_403(job_id)
+    server = db.session.get(Server, job.server_id)
+    steps = json.loads(job.steps_json)['steps']
+    return render_template(
+        'servers/_provisioning_modal.html',
+        job=job, server=server, steps=steps, provisioning_steps=STEPS,
+    )
+
+
 @provisioning_bp.route('/jobs/<int:job_id>/step', methods=['POST'])
 @login_required
 @role_required('admin', 'superadmin')
@@ -56,14 +76,9 @@ def run_step(job_id):
 def restart(job_id):
     """Restart pipeline после provisioning_failed (план A3.3 п.3).
 
-    Переиспользует job, продолжает обычным поллингом — отдаёт полную
-    страницу modal'а (как при первом запуске из servers.create).
+    Переиспользует job, продолжает обычным поллингом — редиректит на ту же
+    страницу, что и первый запуск из servers.create.
     """
     job = _get_job_or_403(job_id)
     restart_job(job)
-    server = db.session.get(Server, job.server_id)
-    steps = json.loads(job.steps_json)['steps']
-    return render_template(
-        'servers/_provisioning_modal.html',
-        job=job, server=server, steps=steps, provisioning_steps=STEPS,
-    )
+    return redirect(url_for('provisioning.job_page', job_id=job.id))

@@ -1,6 +1,4 @@
 """Server CRUD + HTMX endpoints."""
-import json
-
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
     jsonify, current_app, abort
@@ -19,7 +17,7 @@ from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS, TRANSIENT_FORM_FIELDS,
 )
-from app.services.provisioning import STEPS, OnboardingLockedError, start_onboarding
+from app.services.provisioning import OnboardingLockedError, start_onboarding
 
 servers_bp = Blueprint('servers', __name__)
 
@@ -190,11 +188,7 @@ def create():
                 # ещё ни одного), но start_onboarding — общая точка входа.
                 flash(str(exc), 'error')
                 return redirect(url_for('servers.detail', server_id=server.id))
-            steps = json.loads(job.steps_json)['steps']
-            return render_template(
-                'servers/_provisioning_modal.html',
-                job=job, server=server, steps=steps, provisioning_steps=STEPS,
-            )
+            return redirect(url_for('provisioning.job_page', job_id=job.id))
 
         return redirect(url_for('servers.list_servers'))
     return render_template('servers/form.html', form=form, title='Новый сервер',

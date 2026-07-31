@@ -67,8 +67,11 @@ class TestOnboardingCheckboxOn:
                 'bootstrap_password': 'Init-Pass-123!',
             })
 
-        # Онбординг рендерит modal, а не редиректит на список.
-        assert resp.status_code == 200
+        # PRG: онбординг редиректит на страницу job'а. Отрисовка страницы прямо
+        # в ответ на POST оставляла в истории браузера запись, уже создавшую
+        # сервер — F5 плюс «повторить» заводил второй сервер (имя не уникально)
+        # и второй pipeline по живой машине.
+        assert resp.status_code == 302
 
         server = Server.query.filter_by(name='vps-auto-01').first()
         assert server is not None
@@ -77,6 +80,7 @@ class TestOnboardingCheckboxOn:
 
         job = ProvisioningJob.query.filter_by(server_id=server.id).first()
         assert job is not None
+        assert resp.headers['Location'].endswith(f'/provisioning/jobs/{job.id}')
         assert job.job_type == 'onboarding'
         assert job.status == 'running'
         # Первый шаг (catalog) ещё не запущен вручную -> vps_client не звался
@@ -584,8 +588,12 @@ class TestProvisioningFailedUI:
 
         resp = admin_client.post(f'/provisioning/jobs/{job.id}/restart')
 
-        assert resp.status_code == 200
-        assert b'provisioning-steps' in resp.data
+        # PRG: restart тоже редиректит — иначе F5 перезапускал pipeline
+        # по живой машине.
+        assert resp.status_code == 302
+        assert resp.headers['Location'].endswith(f'/provisioning/jobs/{job.id}')
+        assert b'provisioning-steps' in admin_client.get(
+            f'/provisioning/jobs/{job.id}').data
 
         db.session.refresh(job)
         db.session.refresh(server)
