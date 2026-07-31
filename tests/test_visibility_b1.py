@@ -139,6 +139,10 @@ class TestProvisioningRoutesRejectForeign:
         job = _foreign_job(foreign_server, superadmin_user)
         assert admin_client.post(f'/provisioning/jobs/{job.id}/restart').status_code == 403
 
+    def test_job_page_forbidden(self, admin_client, foreign_server, superadmin_user):
+        job = _foreign_job(foreign_server, superadmin_user)
+        assert admin_client.get(f'/provisioning/jobs/{job.id}').status_code == 403
+
 
 class TestCreateLandsInGroup:
     """Заведённый админом сервер обязан попасть в его группу.
