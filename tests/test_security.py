@@ -125,8 +125,8 @@ class TestLoginRateLimit:
                 environ_base={'REMOTE_ADDR': ip},
             )
             statuses.append(resp.status_code)
-        # Первые 5 — 200 (форма с ошибкой), 6-я — 429
-        assert statuses[:5] == [200, 200, 200, 200, 200]
+        # Первые 5 — 302 назад на форму (PRG), 6-я — 429
+        assert statuses[:5] == [302, 302, 302, 302, 302]
         assert statuses[5] == 429
 
     def test_successful_login_resets_counter(self, app, db, client):
@@ -185,13 +185,14 @@ class TestLoginRateLimit:
                 data={'username': 'x', 'password': 'y'},
                 environ_base={'REMOTE_ADDR': '10.0.0.1'},
             )
-        # С другого IP — лимит не задет, должно быть 200
+        # С другого IP — лимит не задет: обычный отказ (302 назад на форму),
+        # а не 429.
         resp = client.post(
             '/auth/login',
             data={'username': 'x', 'password': 'y'},
             environ_base={'REMOTE_ADDR': '10.0.0.2'},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 302
 
 
 # --------------------------------------------------------------------------- #
