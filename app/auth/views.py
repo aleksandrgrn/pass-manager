@@ -122,6 +122,10 @@ def login():
         # Неудачная попытка — фиксируем для rate-limit
         _record_failed_attempt(client_ip)
         flash('Неверный логин или пароль.', 'error')
+        # POST/Redirect/GET: отрисовка прямо в ответ на POST оставляет в
+        # истории браузера запись с учётными данными, и F5 переотправляет их.
+        # Каждая переотправка — отдельный bind в AD, а порог блокировки 6.
+        return redirect(url_for('auth.login'))
 
     return render_template('auth/login.html', form=form)
 

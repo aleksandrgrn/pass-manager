@@ -27,24 +27,39 @@ class TestLoginPost:
         assert resp.status_code == 302
         assert resp.headers['Location'].endswith('/servers/')
 
-    def test_wrong_password_shows_form(self, client, admin_user):
-        """Неверный пароль → 200 (форма с ошибкой, не редирект)."""
+    def test_wrong_password_redirects_back(self, client, admin_user):
+        """Неверный пароль → 302 назад на форму (PRG), а не отрисовка на POST.
+
+        Рендер прямо в ответ на POST делает F5 повтором отправки учётных
+        данных: браузер спрашивает «повторить?», и каждое согласие уходит в AD
+        отдельным bind'ом — при пороге блокировки 6 это запирает учётку.
+        """
         resp = client.post(
             '/auth/login',
             data={'username': 'admin_test', 'password': 'WRONG'},
             environ_base={'REMOTE_ADDR': '198.51.100.11'},
         )
-        assert resp.status_code == 200
-        body = resp.get_data(as_text=True)
-        # Должна быть flash-ошибка и форма должна перерисоваться.
-        assert 'Неверный логин или пароль' in body
+        assert resp.status_code == 302
+        assert resp.headers['Location'].endswith('/auth/login')
 
-    def test_unknown_user_shows_form(self, client):
-        """Несуществующий пользователь → 200, не 500."""
+    def test_wrong_password_shows_error_after_redirect(self, client, admin_user):
+        """Сообщение об ошибке переживает редирект (flash)."""
+        resp = client.post(
+            '/auth/login',
+            data={'username': 'admin_test', 'password': 'WRONG'},
+            environ_base={'REMOTE_ADDR': '198.51.100.13'},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert 'Неверный логин или пароль' in resp.get_data(as_text=True)
+
+    def test_unknown_user_redirects_back(self, client):
+        """Несуществующий пользователь → 302, не 500."""
         resp = client.post(
             '/auth/login',
             data={'username': 'ghost', 'password': 'whatever'},
             environ_base={'REMOTE_ADDR': '198.51.100.12'},
+            follow_redirects=True,
         )
         assert resp.status_code == 200
         assert 'Неверный логин или пароль' in resp.get_data(as_text=True)
