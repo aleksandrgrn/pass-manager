@@ -7,7 +7,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from app.extensions import db, login_manager
 from app.models import User
 from app.forms import LoginForm
-from app.auth.ldap_auth import authenticate_ldap
+from app.auth.ldap_auth import LdapUnavailable, authenticate_ldap
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,15 @@ def login():
 
         # Try LDAP first (if configured)
         ldap_result = None
+        ldap_broken = False
         if current_app.config.get('LDAP_SERVER'):
-            ldap_result = authenticate_ldap(username, password, current_app)
+            try:
+                ldap_result = authenticate_ldap(username, password, current_app)
+            except LdapUnavailable:
+                # Вход не прерываем: локальный суперадмин нужен именно тогда,
+                # когда каталог лёг. Но и «неверный логин или пароль» здесь
+                # соврало бы — сообщение ниже зависит от этого флага.
+                ldap_broken = True
 
         if ldap_result and ldap_result['authenticated']:
             user = _get_or_create_user(
@@ -121,7 +128,10 @@ def login():
 
         # Неудачная попытка — фиксируем для rate-limit
         _record_failed_attempt(client_ip)
-        flash('Неверный логин или пароль.', 'error')
+        if ldap_broken:
+            flash('Служба аутентификации недоступна. Обратитесь к администратору.', 'error')
+        else:
+            flash('Неверный логин или пароль.', 'error')
         # POST/Redirect/GET: отрисовка прямо в ответ на POST оставляет в
         # истории браузера запись с учётными данными, и F5 переотправляет их.
         # Каждая переотправка — отдельный bind в AD, а порог блокировки 6.
