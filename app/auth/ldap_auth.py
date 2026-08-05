@@ -2,7 +2,12 @@
 import logging
 import socket
 from ldap3 import Server, Connection, ALL, SUBTREE, Tls
-from ldap3.core.exceptions import LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError
+from ldap3.core.exceptions import (
+    LDAPBindError,
+    LDAPResponseTimeoutError,
+    LDAPSocketReceiveError,
+    LDAPSocketSendError,
+)
 from ldap3.utils.conv import escape_filter_chars
 import ssl
 
@@ -13,13 +18,30 @@ logger = logging.getLogger(__name__)
 LDAP_RECEIVE_TIMEOUT = 10
 
 
+class LdapUnavailable(Exception):
+    """Каталог не смог ответить: это поломка, а не «пароль не подошёл».
+
+    Ненастроенная или заблокированная служебная учётка, недоступный
+    контроллер, непройденная проверка сертификата — всё это раньше
+    возвращалось тем же тихим None, что и неверный пароль сотрудника, и
+    приложение отвечало «неверный логин или пароль». После ротации пароля
+    служебной учётки это сообщение получил бы весь отдел, и причину искали
+    бы у себя, а не в `.env`.
+    """
+
+
 def authenticate_ldap(username, password, app):
     """
     Authenticate user against Active Directory via LDAP.
 
     Returns:
         dict with keys: authenticated (bool), user_info (dict)
-        or None if authentication fails (включая таймаут).
+        или None — если вход не состоялся по вине учётных данных: пользователя
+        нет в каталоге (гейт по группе) или его пароль не подошёл.
+
+    Raises:
+        LdapUnavailable: каталог сломан или недоступен. Отличать обязательно —
+            см. docstring исключения.
     """
     ldap_server = app.config.get('LDAP_SERVER')
     ldap_port = app.config.get('LDAP_PORT', 389)
@@ -46,7 +68,7 @@ def authenticate_ldap(username, password, app):
             'ею находят пользователя в каталоге, а пароль проверяется отдельным '
             'bind\'ом от имени самого пользователя.'
         )
-        return None
+        raise LdapUnavailable('LDAP_BIND_DN не задан')
 
     if not ldap_use_ssl:
         logger.warning(
@@ -131,14 +153,23 @@ def authenticate_ldap(username, password, app):
 
         bind_conn.unbind()
 
-        # Now try to bind as the user to verify password
-        user_conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            auto_bind=True,
-            receive_timeout=LDAP_RECEIVE_TIMEOUT,
-        )
+        # Now try to bind as the user to verify password.
+        # Этот bind — единственное место, где invalidCredentials означает
+        # «пароль сотрудника не подошёл». Служебный bind выше бросает ровно
+        # такой же LDAPBindError, но означает поломку, поэтому два bind'а
+        # разведены по отдельным except: сузить общий по типу исключения
+        # нельзя — баг не исчезнет, а переедет.
+        try:
+            user_conn = Connection(
+                server,
+                user=user_dn,
+                password=password,
+                auto_bind=True,
+                receive_timeout=LDAP_RECEIVE_TIMEOUT,
+            )
+        except LDAPBindError:
+            logger.info('LDAP: пароль пользователя %s не подошёл', username)
+            return None
         user_conn.unbind()
 
         return {
@@ -151,7 +182,7 @@ def authenticate_ldap(username, password, app):
         }
 
     except (LDAPResponseTimeoutError, LDAPSocketReceiveError, LDAPSocketSendError, socket.timeout) as e:
-        # Таймаут LDAP — не валимся с 500, просто считаем попытку неудачной.
+        # Таймаут LDAP — не валимся с 500, но и за неверный пароль не выдаём.
         # ldap3 не имеет единого «LDAPSocketTimeoutError»: таймауты приходят как
         # LDAPResponseTimeoutError (превышён receive_timeout) или как
         # LDAPSocketReceiveError/SendError, оборачивающие socket.timeout.
@@ -159,7 +190,9 @@ def authenticate_ldap(username, password, app):
             'LDAP timeout для пользователя %s при обращении к %s:%s (%s)',
             username, ldap_server, ldap_port, e,
         )
-        return None
+        raise LdapUnavailable(f'{ldap_server}:{ldap_port} не ответил') from e
     except Exception as e:
+        # Сюда попадает всё, что случилось до bind'а пользователя: bind
+        # служебной учётки, TLS, поиск. Это поломка нашей стороны.
         logger.error(f'LDAP authentication error for {username}: {e}')
-        return None
+        raise LdapUnavailable(str(e)) from e

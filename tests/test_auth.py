@@ -1,7 +1,11 @@
 """Тесты авторизации: login/logout, корневой редирект, защита роутов."""
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+
+from app.auth.ldap_auth import LdapUnavailable
 
 
 class TestLoginGet:
@@ -63,6 +67,47 @@ class TestLoginPost:
         )
         assert resp.status_code == 200
         assert 'Неверный логин или пароль' in resp.get_data(as_text=True)
+
+    def test_broken_ldap_still_lets_local_admin_in(self, app, client, admin_user):
+        """Домен лёг — локальный суперадмин всё равно входит.
+
+        Это единственный путь внутрь, когда каталог недоступен, и нужен он
+        ровно в этот момент. Поэтому поломка LDAP не прерывает вход, а лишь
+        меняет сообщение при неудаче.
+        """
+        app.config['LDAP_SERVER'] = 'dc01.example.local'
+
+        with patch('app.auth.views.authenticate_ldap',
+                   side_effect=LdapUnavailable('служебная учётка не пустила')):
+            resp = client.post(
+                '/auth/login',
+                data={'username': 'admin_test', 'password': 'pass123'},
+                environ_base={'REMOTE_ADDR': '198.51.100.14'},
+            )
+
+        assert resp.status_code == 302
+        assert resp.headers['Location'].endswith('/servers/')
+
+    def test_broken_ldap_says_service_unavailable(self, app, client, admin_user):
+        """Домен лёг, локальный пароль не подошёл → честная причина.
+
+        «Неверный логин или пароль» здесь врёт: после ротации пароля служебной
+        учётки его увидит весь отдел и пойдёт перебирать свои пароли.
+        """
+        app.config['LDAP_SERVER'] = 'dc01.example.local'
+
+        with patch('app.auth.views.authenticate_ldap',
+                   side_effect=LdapUnavailable('служебная учётка не пустила')):
+            resp = client.post(
+                '/auth/login',
+                data={'username': 'mbelyakov', 'password': 'whatever'},
+                environ_base={'REMOTE_ADDR': '198.51.100.15'},
+                follow_redirects=True,
+            )
+
+        text = resp.get_data(as_text=True)
+        assert 'Служба аутентификации недоступна' in text
+        assert 'Неверный логин или пароль' not in text
 
     def test_login_redirects_when_already_authenticated(self, admin_client):
         """Повторный login уже аутентифицированного юзера → редирект."""

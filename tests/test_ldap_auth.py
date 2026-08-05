@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import ssl
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from app.auth.ldap_auth import authenticate_ldap
+import pytest
+from ldap3.core.exceptions import LDAPBindError
+
+from app.auth.ldap_auth import LdapUnavailable, authenticate_ldap
 
 
 def _configure(app, **overrides):
@@ -33,17 +36,65 @@ class TestRefusesUnusableConfig:
         _configure(app, LDAP_SERVER='')
         assert authenticate_ldap('ivanov', 'pw', app) is None
 
-    def test_no_bind_dn_returns_none(self, app, caplog):
+    def test_no_bind_dn_raises(self, app, caplog):
         """Раньше здесь был режим прямого bind'а, собиравший невалидный UPN
-        вида «ivanov@DC=example,DC=local». Он не работал никогда и молчал об этом."""
+        вида «ivanov@DC=example,DC=local». Он не работал никогда и молчал об этом.
+
+        Теперь это не тихий None: ненастроенная служебная учётка — поломка,
+        а не «сотрудник ошибся паролем».
+        """
         _configure(app, LDAP_BIND_DN='')
 
         with patch('app.auth.ldap_auth.Connection') as conn:
-            assert authenticate_ldap('ivanov', 'pw', app) is None
+            with pytest.raises(LdapUnavailable):
+                authenticate_ldap('ivanov', 'pw', app)
             # к домену вообще не пошли — отказ до сетевого вызова
             conn.assert_not_called()
 
         assert 'LDAP_BIND_DN' in caplog.text
+
+
+class TestBrokenDirectoryIsDistinguishable:
+    """Поломка каталога и неверный пароль сотрудника — разные вещи.
+
+    В функции два bind'а, и оба бросают LDAPBindError с текстом
+    invalidCredentials: служебный (ищет пользователя) и пользовательский
+    (проверяет пароль). Если не различать, ротация пароля служебной учётки
+    положит вход всему отделу с сообщением «неверный логин или пароль»,
+    и искать причину будут не там.
+    """
+
+    def test_broken_service_account_raises(self, app):
+        """Служебная учётка не пустила → поломка, наверх летит LdapUnavailable."""
+        _configure(app)
+
+        with patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection',
+                      side_effect=LDAPBindError('invalidCredentials')):
+            with pytest.raises(LdapUnavailable):
+                authenticate_ldap('ivanov', 'pw', app)
+
+    def test_wrong_user_password_returns_none(self, app):
+        """Тот же LDAPBindError, но на bind'е пользователя → обычный отказ."""
+        _configure(app)
+
+        bind_conn = MagicMock()
+        bind_conn.entries = [MagicMock()]
+
+        with patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection',
+                      side_effect=[bind_conn, LDAPBindError('invalidCredentials')]):
+            assert authenticate_ldap('ivanov', 'wrong-password', app) is None
+
+    def test_unreachable_directory_raises(self, app):
+        """AD недоступен → тоже поломка, а не «неверный пароль»."""
+        _configure(app)
+
+        with patch('app.auth.ldap_auth.Server'), \
+                patch('app.auth.ldap_auth.Connection',
+                      side_effect=OSError('network unreachable')):
+            with pytest.raises(LdapUnavailable):
+                authenticate_ldap('ivanov', 'pw', app)
 
 
 class TestCertificateIsVerified:
