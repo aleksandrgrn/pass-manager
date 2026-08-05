@@ -2,7 +2,7 @@
 
 Только транспорт: Bearer-токен, timeout, обработка connection-refused/5xx.
 Никакой бизнес-логики онбординга — это A3. Каждая функция 1:1 к endpoint'у
-E1-E8 из specs/track-c-architecture.md §4.2.
+E1-E9 из specs/track-c-architecture.md §4.2.
 
 Возврат при ошибке — везде единый формат:
     {"success": False, "error_type": "...", "message": "..."}
@@ -72,7 +72,7 @@ def _request(method: str, path: str, job_id: Optional[str] = None, **kwargs: Any
 
 
 # --------------------------------------------------------------------------- #
-# E1-E8
+# E1-E9
 # --------------------------------------------------------------------------- #
 
 def add_server(
@@ -142,3 +142,7 @@ def test_server(server_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
 
 def get_access_key(server_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
     return _request("GET", f"/servers/{server_id}/access-key", job_id=job_id)
+
+
+def list_key_deployments(job_id: Optional[str] = None) -> Dict[str, Any]:
+    return _request("GET", "/key-deployments", job_id=job_id)

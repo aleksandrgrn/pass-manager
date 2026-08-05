@@ -155,6 +155,41 @@ class TestEndpointMapping:
         assert args[0] == "GET"
         assert args[1].endswith("/servers/3/access-key")
 
+    def test_list_key_deployments_get_path_and_bearer(self, configured_app):
+        with configured_app.app_context(), patch(
+            "app.services.vps_client.requests.request"
+        ) as mock_req:
+            mock_req.return_value = _mock_response({"success": True, "deployments": []})
+            vps_client.list_key_deployments()
+
+        args, kwargs = mock_req.call_args
+        assert args[0] == "GET"
+        assert args[1].endswith("/key-deployments")
+        assert kwargs["headers"]["Authorization"] == "Bearer test-token-xyz"
+
+    def test_list_key_deployments_returns_response_as_is(self, configured_app):
+        payload = {
+            "success": True,
+            "deployments": [{"key_id": 1, "server_id": 2, "deployed_at": "..."}],
+        }
+        with configured_app.app_context(), patch(
+            "app.services.vps_client.requests.request"
+        ) as mock_req:
+            mock_req.return_value = _mock_response(payload)
+            result = vps_client.list_key_deployments()
+
+        assert result == payload
+
+    def test_list_key_deployments_forwards_job_id_header(self, configured_app):
+        with configured_app.app_context(), patch(
+            "app.services.vps_client.requests.request"
+        ) as mock_req:
+            mock_req.return_value = _mock_response()
+            vps_client.list_key_deployments(job_id="job-77")
+
+        _, kwargs = mock_req.call_args
+        assert kwargs["headers"]["X-Pass-Manager-Job-Id"] == "job-77"
+
 
 class TestErrorHandling:
     def test_connection_refused_returns_provisioning_failed_shape(self, configured_app):
