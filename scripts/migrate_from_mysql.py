@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
 from app.extensions import db
-from app.models import User, Server, Domain
+from app.models import User, Server, Domain, ServerGroup
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ def _bool(val, default=False):
     return default
 
 
-def import_legacy_data(tables, *, dry_run=False, reset=False):
+def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     vps_rows = tables.get('vps', [])
     details_rows = tables.get('vps_details', [])
     management_rows = tables.get('vps_management', [])
@@ -202,13 +202,27 @@ def import_legacy_data(tables, *, dry_run=False, reset=False):
             db.session.commit()
             print('✓ Cleared Server and Domain tables')
 
+    # Разрешаем имя группы в идентификатор до цикла по vps_rows.
+    group_id = None
+    if group:
+        existing = ServerGroup.query.filter_by(name=group).first()
+        if existing:
+            group_id = existing.id
+        elif dry_run:
+            print(f'[dry-run] Would create group «{group}»')
+        else:
+            new_group = ServerGroup(name=group)
+            db.session.add(new_group)
+            db.session.commit()
+            group_id = new_group.id
+
     created_servers = 0
     created_domains = 0
     skipped = 0
 
     for row in vps_rows:
         if len(row) < 9:
-            print(f'⚠️  vps row too short, skipping: {row}')
+            print(f'⚠️  vps row too short ({len(row)} columns), skipping')
             skipped += 1
             continue
         # Legacy column order from readme/vps2/ajax_table.class.php:
@@ -285,6 +299,7 @@ def import_legacy_data(tables, *, dry_run=False, reset=False):
             vps_management_url=vps_mgmt,
             mgt_login=mgt_login,
             mgt_pass=mgt_pass,
+            group_id=group_id,
         )
 
         if dry_run:
@@ -361,6 +376,7 @@ def main():
     parser.add_argument('--live', action='store_true', help='Read from live MySQL via env vars')
     parser.add_argument('--dry-run', action='store_true', help='Print actions only')
     parser.add_argument('--reset', action='store_true', help='Drop existing servers/domains first')
+    parser.add_argument('--group', help='Положить переносимые серверы в группу с этим именем (создаётся, если её нет)')
     args = parser.parse_args()
 
     if not args.dump and not args.live:
@@ -379,7 +395,7 @@ def main():
     config_name = os.environ.get('FLASK_CONFIG', 'development')
     app = create_app(config_name)
     with app.app_context():
-        import_legacy_data(tables, dry_run=args.dry_run, reset=args.reset)
+        import_legacy_data(tables, dry_run=args.dry_run, reset=args.reset, group=args.group)
 
 
 if __name__ == '__main__':

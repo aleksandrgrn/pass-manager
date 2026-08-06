@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 
 from app.extensions import db
-from app.models import Domain, Server
+from app.models import Domain, Server, ServerGroup
 from scripts.migrate_from_mysql import (
     import_legacy_data,
     parse_sql_dump,
@@ -273,3 +273,79 @@ class TestImportLegacyReal:
             # Старая запись удалена, новые добавлены
             assert db.session.get(Server, 500) is None
             assert Server.query.count() == 2
+
+
+# --------------------------------------------------------------------------- #
+# import_legacy_data — параметр --group
+# --------------------------------------------------------------------------- #
+
+class TestImportLegacyGroup:
+    """Группа для переносимых серверов (FIX DEPLOY.1, правка B)."""
+
+    def test_without_group_leaves_servers_groupless(self, app, sql_dump):
+        """Без --group поведение прежнее: group_id остаётся None."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=False, reset=True)
+            assert ServerGroup.query.count() == 0
+            assert all(
+                srv.group_id is None for srv in Server.query.all()
+            ), 'Без --group серверы не должны получать группу'
+
+    def test_import_creates_missing_group(self, app, sql_dump):
+        """Группа создаётся, если её нет; серверы получают её id."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=False, reset=True, group='Связь')
+
+            groups = ServerGroup.query.all()
+            assert len(groups) == 1
+            assert groups[0].name == 'Связь'
+            assert all(
+                srv.group_id == groups[0].id for srv in Server.query.all()
+            )
+
+    def test_import_reuses_existing_group(self, app, sql_dump):
+        """Существующая группа переиспользуется, новая не создаётся."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            existing = ServerGroup(name='Связь')
+            db.session.add(existing)
+            db.session.commit()
+
+            import_legacy_data(tables, dry_run=False, reset=True, group='Связь')
+
+            assert ServerGroup.query.count() == 1
+            assert all(
+                srv.group_id == existing.id for srv in Server.query.all()
+            )
+
+    def test_dry_run_with_group_writes_nothing(self, app, sql_dump):
+        """dry_run с группой ничего не пишет: ни серверов, ни группы."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True, group='Связь')
+
+            assert ServerGroup.query.count() == 0
+            assert Server.query.count() == 0
+            assert Domain.query.count() == 0
+
+    def test_broken_row_does_not_leak_password(self, app, tmp_path, capsys):
+        """Битая строка печатает предупреждение, но не значение пароля."""
+        sql = (
+            "INSERT INTO `vps` VALUES "
+            "(1, 'broken', 'secret-pass');"
+        )
+        path = tmp_path / 'broken.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        # Предупреждение о короткой строке в выводе ЕСТЬ (негативная проверка
+        # «пароля нет» без этой проверки зеленела бы вакуумно).
+        assert 'vps row too short' in out
+        # Значение пароля в выводе ОТСУТСТВУЕТ.
+        assert 'secret-pass' not in out
