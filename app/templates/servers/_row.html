@@ -53,7 +53,7 @@
             {{ '✓' if server.has_vpn else '—' }}
         </button>
     </td>
-    <td>
+    <td class="cell-flex">
         <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-muted text-xs">{{ server.notes or '—' }}</div>
     </td>
     <td class="text-center whitespace-nowrap">
