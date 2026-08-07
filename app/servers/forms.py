@@ -70,6 +70,11 @@ INLINE_EDITABLE_FIELDS = {
     'mgt_pass': 'mgt_pass',
 }
 
+# Поля ServerForm, хранящие секрет. Не выводить и не принимать от того, кому
+# пароли не показываются (та же граница, что у списка, карточки и inline-правки).
+# bootstrap_password сюда не входит: он транзиентный, вводится, а не читается.
+PASSWORD_FORM_FIELDS = ('password', 'provider_password', 'web_pass', 'mgt_pass')
+
 # Boolean toggle fields. Сервисы (has_exim/has_squid/has_vpn) убраны из
 # inline-toggle в A1 — в A4 будут управляться через карточку сервера.
 INLINE_TOGGLE_FIELDS = {'active': 'active'}

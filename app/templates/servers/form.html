@@ -25,10 +25,13 @@
                 {% for err in form.group_id.errors %}<p class="text-danger text-xs">{{ err }}</p>{% endfor %}
             </div>
             {% endif %}
+            {# Полей с паролями у не-суперадмина в форме нет — см. views.py::edit(). #}
+            {% if form.password %}
             <div>
                 {{ form.password.label(class_='field-label') }}
                 {{ form.password(class_='field mt-1 font-mono', autocomplete='new-password') }}
             </div>
+            {% endif %}
             <div>
                 {{ form.ssh_username.label(class_='field-label') }}
                 {{ form.ssh_username(class_='field mt-1 font-mono') }}
@@ -45,10 +48,12 @@
                 {{ form.provider_login.label(class_='field-label') }}
                 {{ form.provider_login(class_='field mt-1') }}
             </div>
+            {% if form.provider_password %}
             <div>
                 {{ form.provider_password.label(class_='field-label') }}
                 {{ form.provider_password(class_='field mt-1 font-mono') }}
             </div>
+            {% endif %}
             <div class="md:col-span-2">
                 {{ form.notes.label(class_='field-label') }}
                 {{ form.notes(class_='field mt-1', rows=2) }}
@@ -90,10 +95,10 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                 <div>{{ form.website.label(class_='block text-xs text-muted') }}{{ form.website(class_='field mt-1 text-sm') }}</div>
                 <div>{{ form.web_login.label(class_='block text-xs text-muted') }}{{ form.web_login(class_='field mt-1 text-sm') }}</div>
-                <div>{{ form.web_pass.label(class_='block text-xs text-muted') }}{{ form.web_pass(class_='field mt-1 text-sm font-mono') }}</div>
+                {% if form.web_pass %}<div>{{ form.web_pass.label(class_='block text-xs text-muted') }}{{ form.web_pass(class_='field mt-1 text-sm font-mono') }}</div>{% endif %}
                 <div>{{ form.vps_management_url.label(class_='block text-xs text-muted') }}{{ form.vps_management_url(class_='field mt-1 text-sm') }}</div>
                 <div>{{ form.mgt_login.label(class_='block text-xs text-muted') }}{{ form.mgt_login(class_='field mt-1 text-sm') }}</div>
-                <div>{{ form.mgt_pass.label(class_='block text-xs text-muted') }}{{ form.mgt_pass(class_='field mt-1 text-sm font-mono') }}</div>
+                {% if form.mgt_pass %}<div>{{ form.mgt_pass.label(class_='block text-xs text-muted') }}{{ form.mgt_pass(class_='field mt-1 text-sm font-mono') }}</div>{% endif %}
             </div>
         </details>
 

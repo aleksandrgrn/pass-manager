@@ -16,6 +16,7 @@ from app.auth.decorators import role_required
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS, TRANSIENT_FORM_FIELDS,
+    PASSWORD_FORM_FIELDS,
 )
 from app.services.provisioning import OnboardingLockedError, start_onboarding
 
@@ -208,6 +209,14 @@ def edit(server_id):
         # Р7: перекладывать сервер между командами — дело суперадмина. Поле
         # убираем целиком, иначе populate_obj затрёт группу тем, что пришло.
         del form['group_id']
+
+    # Форма заполнена из объекта, то есть несёт расшифрованные пароли. Кому их
+    # не показывают — у того полей нет вовсе: спрятать в шаблоне мало (значение
+    # всё равно уехало бы в HTML), а оставить в форме нельзя (populate_obj
+    # затёр бы секрет пустым значением из POST).
+    if not _passwords_visible():
+        for field_name in PASSWORD_FORM_FIELDS:
+            del form[field_name]
 
     if form.validate_on_submit():
         # Онбординг при редактировании не запускается, но транзиентные поля
