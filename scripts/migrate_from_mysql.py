@@ -280,6 +280,8 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     domains_skipped_vpsid = 0
     domains_skipped_empty_name = 0
     domains_skipped_orphan = 0
+    domains_skipped_placeholder = 0
+    domains_skipped_broken_name = 0
 
     for row in vps_rows:
         if len(row) != 12:
@@ -397,6 +399,18 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
         if not isinstance(domain_name, str) or not domain_name.strip():
             domains_skipped_empty_name += 1
             continue
+        # Заглушка «NO DOMAINS»: отсутствие строк в domains и так значит, что
+        # доменов нет. Сравнение точное (без учёта регистра и краевых пробелов),
+        # списков «похожих» заглушек не заводим.
+        if str(domain_name).strip().upper() == 'NO DOMAINS':
+            domains_skipped_placeholder += 1
+            continue
+        # Битое имя: `?` — символ, которым MySQL заменяет то, что не смог
+        # записать в колонку. В имени домена он невозможен, восстанавливать
+        # нечего.
+        if '?' in domain_name:
+            domains_skipped_broken_name += 1
+            continue
         # Домен указывает на сервер, которого в новой базе не будет:
         # либо строки vps с таким id нет в дампе, либо сервер был пропущен
         # (пустое имя и т.п.). Такой домен не переносим — считаем и не вешаем
@@ -417,6 +431,8 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
         + domains_skipped_vpsid
         + domains_skipped_empty_name
         + domains_skipped_orphan
+        + domains_skipped_placeholder
+        + domains_skipped_broken_name
     )
     vps_accounted = created_servers + skipped
 
@@ -428,7 +444,9 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
           f'skipped by vpsid: {domains_skipped_vpsid}, '
           f'empty name: {domains_skipped_empty_name}, '
           f'orphan (no created server): {domains_skipped_orphan}, '
-          f'wrong column count: {domains_skipped_len}')
+          f'wrong column count: {domains_skipped_len}, '
+          f'placeholder (NO DOMAINS): {domains_skipped_placeholder}, '
+          f'broken name (?): {domains_skipped_broken_name}')
     print(f'  notes with disk: {notes_with_disk}')
 
     if domains_accounted != len(domains_rows) or vps_accounted != len(vps_rows):

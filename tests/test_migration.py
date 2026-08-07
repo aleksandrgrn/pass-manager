@@ -467,7 +467,8 @@ class TestDryRunReport:
         assert 'inactive by dash: 1' in out
         assert 'domains: parsed 3, bound 3, ' \
                'skipped by vpsid: 0, empty name: 0, '\
-               'orphan (no created server): 0, wrong column count: 0' in out
+               'orphan (no created server): 0, wrong column count: 0, ' \
+               'placeholder (NO DOMAINS): 0, broken name (?): 0' in out
         assert 'notes with disk: 1' in out
 
     def test_report_does_not_print_password_values(self, app, sql_dump, capsys):
@@ -509,7 +510,8 @@ def _domain_report(out):
     pattern = (
         r'parsed (\d+), bound (\d+), '
         r'skipped by vpsid: (\d+), empty name: (\d+), '
-        r'orphan \(no created server\): (\d+), wrong column count: (\d+)'
+        r'orphan \(no created server\): (\d+), wrong column count: (\d+), '
+        r'placeholder \(NO DOMAINS\): (\d+), broken name \(\?\): (\d+)'
     )
     m = re.search(pattern, line)
     assert m, f'не удалось распарсить строку отчёта: {line!r}'
@@ -520,6 +522,8 @@ def _domain_report(out):
         'empty': int(m.group(4)),
         'orphan': int(m.group(5)),
         'len': int(m.group(6)),
+        'placeholder': int(m.group(7)),
+        'broken': int(m.group(8)),
     }
 
 
@@ -608,7 +612,85 @@ class TestDomainsOrphan:
             report['parsed']
             == report['bound'] + report['vpsid'] + report['empty']
             + report['orphan'] + report['len']
+            + report['placeholder'] + report['broken']
         )
+
+    def test_placeholder_domain_not_imported(self, app, tmp_path, capsys):
+        """Заглушка 'NO DOMAINS' у живого сервера не переносится; сирота не
+        задет. (FIX-MIGRATE-4)"""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, 'NO DOMAINS', '1');\n"
+        )
+        path = tmp_path / 'placeholder1.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            servers, domains, _ = import_legacy_data(tables, dry_run=False, reset=True)
+
+        assert servers == 1
+        assert domains == 0
+        assert Domain.query.count() == 0
+
+    def test_placeholder_case_and_whitespace(self, app, tmp_path, capsys):
+        """Регистр и краевые пробелы не важны: '  no domains  ' — та же
+        заглушка. (FIX-MIGRATE-4)"""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, '  no domains  ', '1');\n"
+        )
+        path = tmp_path / 'placeholder2.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        report = _domain_report(out)
+        assert report['bound'] == 0
+        assert report['placeholder'] == 1
+        assert report['orphan'] == 0
+
+    def test_placeholder_prefix_still_imported(self, app, tmp_path, capsys):
+        """'NO DOMAINS SOMETHING' переносится: правило точное, не по вхождению
+        подстроки. (FIX-MIGRATE-4)"""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, 'NO DOMAINS SOMETHING', '1');\n"
+        )
+        path = tmp_path / 'placeholder3.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            servers, domains, _ = import_legacy_data(tables, dry_run=False, reset=True)
+
+        assert servers == 1
+        assert domains == 1
+
+    def test_broken_name_domain_not_imported(self, app, tmp_path, capsys):
+        """Битое имя с '?' у живого сервера не переносится; заглушка и сирота
+        не затронуты. (FIX-MIGRATE-4)"""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, '???????.??', '1');\n"
+        )
+        path = tmp_path / 'broken1.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            servers, domains, _ = import_legacy_data(tables, dry_run=False, reset=True)
+
+        assert servers == 1
+        assert domains == 0
+        assert Domain.query.count() == 0
 
 
 class TestReportReconciles:
@@ -627,24 +709,30 @@ class TestReportReconciles:
             + "(2, 'ghost.example.com', '99'),\n"   # orphan: сервера нет в дампе
             + "(3, 'bad.example.com', 'abc'),\n"    # vpsid не число
             + "(4, '', '1'),\n"                     # пустое имя
-            + "(5);\n"                              # короткая строка (len<3)
+            + "(5, 'NO DOMAINS', '1'),\n"           # заглушка (FIX-MIGRATE-4)
+            + "(6, '???????.??', '1'),\n"           # битое имя (?)
+            + "(7);\n"                              # короткая строка (len<3)
         )
         path = tmp_path / 'inv_domains.sql'
         path.write_text(sql, encoding='utf-8')
 
         tables = parse_sql_dump(str(path))
-        assert len(tables['domains']) == 5
+        assert len(tables['domains']) == 7
         with app.app_context():
             import_legacy_data(tables, dry_run=True)
 
         out = capsys.readouterr().out
         report = _domain_report(out)
-        assert report['parsed'] == 5
+        assert report['parsed'] == 7
+        assert report['bound'] == 1
+        assert report['placeholder'] == 1
+        assert report['broken'] == 1
         # Инвариант: bound + все счётчики отброшенных == разобрано.
         # Новый необсчитанный continue уменьшит правую сумму — равенство падёт.
         assert (
             report['bound'] + report['vpsid'] + report['empty']
-            + report['orphan'] + report['len'] == report['parsed']
+            + report['orphan'] + report['len']
+            + report['placeholder'] + report['broken'] == report['parsed']
         )
 
     def test_vps_report_reconciles(self, app, tmp_path, capsys):
