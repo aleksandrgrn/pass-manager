@@ -103,8 +103,11 @@
       table.tbl thead th a { color: inherit; }
       table.tbl thead th a.sort-active { color: var(--accent); font-weight: 600; }
       /* color НЕ задаём — наследуется от text-ink на <html>, чтобы per-cell цвета (.cell-num, text-muted) не перебивались */
-      table.tbl tbody td { padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
-      table.tbl .icon-btn { width: 28px; height: 28px; }
+      /* Плотный шаг строки: на 400 серверах каждый лишний пиксель — это 400px
+         прокрутки. Пол высоты держат кнопки действий, поэтому жать padding без
+         них смысла нет — они ужаты ниже, в table.tbl .icon-btn. */
+      table.tbl tbody td { padding: 3px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; line-height: 1.35; }
+      table.tbl .icon-btn { width: 24px; height: 24px; }
       table.tbl tbody tr:last-child td { border-bottom: 0; }
       table.tbl tbody tr:hover { background: var(--accent-weak); }
       .cell-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
