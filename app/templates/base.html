@@ -90,6 +90,11 @@
       .table-wrap { background: var(--surface); border: 1px solid var(--line);
                     border-radius: 10px; overflow-x: auto; }
       table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+      /* Список серверов: колонки по самой длинной записи, а не растянутые на всю
+         ширину. При width:100% браузер раздаёт лишнее место колонкам, и узкие
+         («Провайдер», «Логин») выглядят размашисто. Отдельным классом — на
+         экранах доступа таблицы узкие, там распорка как раз нужна. */
+      table.tbl.tbl-fit { width: auto; }
       table.tbl thead th {
         position: sticky; top: 0; z-index: 10; background: var(--surface-2); color: var(--muted);
         font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
