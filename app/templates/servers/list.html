@@ -28,7 +28,7 @@
 
     <!-- Table -->
     <div class="table-wrap">
-        <table class="tbl tbl-fit">
+        <table class="tbl">
             <thead>
                 <tr>
                     {% set next_dir = 'desc' if direction == 'asc' else 'asc' %}
@@ -55,7 +55,7 @@
                     <th class="text-center"><a href="?sort=has_exim&dir={{ next_dir }}{{ filter_qs }}">exim</a></th>
                     <th class="text-center"><a href="?sort=has_squid&dir={{ next_dir }}{{ filter_qs }}">squid</a></th>
                     <th class="text-center"><a href="?sort=has_vpn&dir={{ next_dir }}{{ filter_qs }}">vpn</a></th>
-                    <th>Комментарии</th>
+                    <th class="cell-flex">Комментарии</th>
                     <th class="text-center">Действия</th>
                 </tr>
             </thead>
