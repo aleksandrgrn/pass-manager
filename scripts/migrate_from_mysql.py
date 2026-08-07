@@ -6,11 +6,16 @@ Supports two input modes:
        MYSQL_PASSWORD, MYSQL_DB.
     2. Parse a .sql dump (mysqldump output). Slower but works offline.
 
-Expected legacy tables (from readme/vps2/):
-    vps            (id, VPS, Password, IP, Provider, PLogin, PPassword, exim, squid, vpn, Notes, active)
-    vps_details    (vps_id, website, web_login, web_pass, vps_management, mgt_login, mgt_pass)
-    vps_management (vps_id)
-    domains        (domain_id, domain, vpsid)
+Expected legacy tables (schema taken from the live dump, SHOW CREATE TABLE):
+
+    vps            (id, VPS, Login, Password, IP, Provider, PLogin, PPassword,
+                    exim, squid, vpn, Notes)                        -- 12 columns
+    vps_details    (vps_id, active, os, cpu, ram, drive)            -- 6 columns
+    vps_management (vps_id, website, web_login, web_pass,
+                    vps_management, mgt_login, mgt_pass)             -- 7 columns
+    domains        (domain_id, domain, vpsid)                       -- 3 columns; vpsid is varchar
+
+`exim`/`squid`/`vpn` are varchar, not numbers — `_bool()` already handles strings.
 
 Usage:
     # Live MySQL
@@ -40,11 +45,55 @@ from app.models import User, Server, Domain, ServerGroup
 # Parsing a .sql dump
 # ---------------------------------------------------------------------------
 
-# Matches: INSERT INTO `vps` VALUES (1,'name','pass',...);
+# Matches only the INSERT header: `INSERT INTO <table> [(cols)] VALUES`.
+# The statement body is scanned separately by `_find_statement_end`, because
+# a `;` inside a string value (password, note) must not end the statement.
 INSERT_RE = re.compile(
-    r"INSERT\s+INTO\s+`?(?P<table>\w+)`?\s*(?:\([^)]+\)\s*)?VALUES\s*(?P<rows>.*?);",
-    re.IGNORECASE | re.DOTALL,
+    r"INSERT\s+INTO\s+`?(?P<table>\w+)`?\s*(?:\([^)]+\)\s*)?VALUES\s*",
+    re.IGNORECASE,
 )
+
+
+def _find_statement_end(sql, start):
+    """Find the `;` that terminates the INSERT statement starting at `start`.
+
+    Walks the SQL char-by-char tracking quote state (a backslash escapes the
+    next char, so ``\\'`` inside a value does not close the string) and
+    parenthesis depth. Returns the index of the first `;` that sits outside
+    quotes and outside parentheses, or ``len(sql)`` if none is found.
+
+    Quote tracking matters because `(`/`)` inside string values must not
+    affect the depth. A `;` inside a value is always at depth >= 1 (values
+    live inside tuple parentheses), so the depth-0 check already excludes it.
+    """
+    depth = 0
+    in_string = False
+    escape = False
+    i = start
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if escape:
+            escape = False
+            i += 1
+            continue
+        if ch == '\\':
+            escape = True
+            i += 1
+            continue
+        if ch == "'":
+            in_string = not in_string
+            i += 1
+            continue
+        if not in_string:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth = max(0, depth - 1)
+        if ch == ';' and depth == 0:
+            return i
+        i += 1
+    return n
 
 
 def _split_tuples(values_blob):
@@ -150,7 +199,8 @@ def parse_sql_dump(path):
     tables = {}
     for m in INSERT_RE.finditer(sql):
         table = m.group('table').lower()
-        rows_blob = m.group('rows')
+        stmt_end = _find_statement_end(sql, m.end())
+        rows_blob = sql[m.end():stmt_end]
         rows = []
         for tuple_str in _split_tuples(rows_blob):
             rows.append(_parse_tuple(tuple_str))
@@ -219,67 +269,79 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     created_servers = 0
     created_domains = 0
     skipped = 0
+    skipped_wrong_cols = 0
+    skipped_empty_name = 0
+    inactive_by_dash = 0
+    domains_skipped_vpsid = 0
+    notes_with_disk = 0
 
     for row in vps_rows:
-        if len(row) < 9:
-            print(f'⚠️  vps row too short ({len(row)} columns), skipping')
+        if len(row) != 12:
+            print(f'⚠️  vps row has {len(row)} columns instead of 12, skipping')
             skipped += 1
+            skipped_wrong_cols += 1
             continue
-        # Legacy column order from readme/vps2/ajax_table.class.php:
-        # active, os, cpu, ram, id, VPS, Password, IP, Provider,
-        # PLogin, PPassword, exim, squid, vpn, Notes
-        # We support both orders by trying to match: id first vs active first.
-        if isinstance(row[0], int) and (len(row) >= 14):
-            # Order: id, VPS, Password, IP, Provider, PLogin, PPassword, exim, squid, vpn, Notes, active, os, cpu, ram
-            server_id = row[0]
-            name = row[1]
-            password = row[2]
-            ip = row[3]
-            provider = row[4]
-            plogin = row[5]
-            ppassword = row[6]
-            has_exim = _bool(row[7])
-            has_squid = _bool(row[8])
-            has_vpn = _bool(row[9])
-            notes = row[10] if len(row) > 10 else None
-            active = _bool(row[11]) if len(row) > 11 else True
-            os_val = row[12] if len(row) > 12 else None
-            cpu = row[13] if len(row) > 13 else None
-            ram = row[14] if len(row) > 14 else None
+
+        # Real schema (SHOW CREATE TABLE): id, VPS, Login, Password, IP,
+        # Provider, PLogin, PPassword, exim, squid, vpn, Notes
+        server_id = row[0]
+        name_raw = row[1]
+        login = row[2]
+        password = row[3]
+        ip = row[4]
+        provider = row[5]
+        plogin = row[6]
+        ppassword = row[7]
+        has_exim = _bool(row[8])
+        has_squid = _bool(row[9])
+        has_vpn = _bool(row[10])
+        notes = row[11]
+
+        # ssh_username NOT NULL, default 'root': пустой Login → 'root'.
+        ssh_username = (str(login).strip() if login is not None else '') or 'root'
+
+        # Флага актуальности в старой базе не было: тире в начале имени
+        # означает, что сервер неактуален. vps_details.active не используем —
+        # владелец базы этой колонкой не пользовался.
+        name = str(name_raw).strip() if name_raw is not None else ''
+        if name.startswith('-'):
+            active = False
+            name = name.lstrip('- ').strip()
+            inactive_by_dash += 1
         else:
-            # Order: active, os, cpu, ram, id, VPS, Password, IP, Provider, PLogin, PPassword, exim, squid, vpn, Notes
-            active = _bool(row[0])
-            os_val = row[1]
-            cpu = row[2]
-            ram = row[3]
-            server_id = row[4]
-            name = row[5]
-            password = row[6]
-            ip = row[7]
-            provider = row[8]
-            plogin = row[9]
-            ppassword = row[10]
-            has_exim = _bool(row[11])
-            has_squid = _bool(row[12])
-            has_vpn = _bool(row[13])
-            notes = row[14] if len(row) > 14 else None
-
+            active = True
         if not name:
+            print('⚠️  vps row has empty name, skipping')
             skipped += 1
+            skipped_empty_name += 1
             continue
 
-        # Pull details
+        # vps_details: vps_id, active, os, cpu, ram, drive
         details = details_by_vps.get(server_id)
-        website = details[1] if details and len(details) > 1 else None
-        web_login = details[2] if details and len(details) > 2 else None
-        web_pass = details[3] if details and len(details) > 3 else None
-        vps_mgmt = details[4] if details and len(details) > 4 else None
-        mgt_login = details[5] if details and len(details) > 5 else None
-        mgt_pass = details[6] if details and len(details) > 6 else None
+        os_val = details[2] if details and len(details) > 2 else None
+        cpu = details[3] if details and len(details) > 3 else None
+        ram = details[4] if details and len(details) > 4 else None
+        drive = details[5] if details and len(details) > 5 else None
+
+        # vps_management: vps_id, website, web_login, web_pass,
+        #                 vps_management, mgt_login, mgt_pass
+        mgmt = mgmt_by_vps.get(server_id)
+        website = mgmt[1] if mgmt and len(mgmt) > 1 else None
+        web_login = mgmt[2] if mgmt and len(mgmt) > 2 else None
+        web_pass = mgmt[3] if mgmt and len(mgmt) > 3 else None
+        vps_mgmt_url = mgmt[4] if mgmt and len(mgmt) > 4 else None
+        mgt_login = mgmt[5] if mgmt and len(mgmt) > 5 else None
+        mgt_pass = mgmt[6] if mgmt and len(mgmt) > 6 else None
+
+        # `drive` поля в модели не имеет — дописываем в notes.
+        if drive is not None and str(drive).strip():
+            notes = f'{notes}\nДиск: {drive}' if notes else f'Диск: {drive}'
+            notes_with_disk += 1
 
         server = Server(
             id=server_id,
             name=name,
+            ssh_username=ssh_username,
             password=password,
             ip_address=ip,
             provider=provider,
@@ -296,7 +358,7 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
             website=website,
             web_login=web_login,
             web_pass=web_pass,
-            vps_management_url=vps_mgmt,
+            vps_management_url=vps_mgmt_url,
             mgt_login=mgt_login,
             mgt_pass=mgt_pass,
             group_id=group_id,
@@ -308,21 +370,23 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
             db.session.merge(server)
         created_servers += 1
 
-    # Domains — legacy table column order: (domain_id, domain, vpsid)
+    # Domains — legacy table column order: (domain_id, domain, vpsid).
+    # vpsid это varchar: приводим к числу явно. Эвристики «угадай порядок
+    # колонок по типам значений» больше нет — она превращала несовпадение
+    # схемы в тихий мусор.
     for row in domains_rows:
         if len(row) < 3:
             continue
-        # Prefer the documented order: domain_id, domain, vpsid
-        domain_name = row[1] if isinstance(row[1], str) else None
-        vpsid = row[2] if isinstance(row[2], int) else None
-        # Fallback heuristic if column order differs
-        if not domain_name or not vpsid:
-            for cell in row:
-                if isinstance(cell, str) and '.' in cell and not domain_name:
-                    domain_name = cell
-                elif isinstance(cell, int) and vpsid is None and cell != row[0]:
-                    vpsid = cell
-        if not domain_name or not vpsid:
+        domain_name = row[1]
+        vpsid_raw = row[2]
+        try:
+            vpsid = int(str(vpsid_raw).strip())
+        except (TypeError, ValueError):
+            vpsid = None
+        if not vpsid:
+            domains_skipped_vpsid += 1
+            continue
+        if not isinstance(domain_name, str) or not domain_name.strip():
             continue
         if dry_run:
             print(f'[dry-run] Would import domain {domain_name} → server {vpsid}')
@@ -334,6 +398,11 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
         db.session.commit()
 
     print(f'\n✓ Imported: {created_servers} servers, {created_domains} domains, skipped {skipped}')
+    print(f'  vps: parsed {len(vps_rows)}, created {created_servers}, '
+          f'skipped {skipped} (wrong columns: {skipped_wrong_cols}, empty name: {skipped_empty_name})')
+    print(f'  inactive by dash: {inactive_by_dash}')
+    print(f'  domains: bound {created_domains}, skipped by vpsid: {domains_skipped_vpsid}')
+    print(f'  notes with disk: {notes_with_disk}')
     return created_servers, created_domains, skipped
 
 
