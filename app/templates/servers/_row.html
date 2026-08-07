@@ -22,11 +22,9 @@
     <td>
         <div data-inline-edit="provider_login" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_login or '—' }}</div>
     </td>
-    {% if passwords_visible %}
     <td class="cell-mono">
         <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_password or '—' }}</div>
     </td>
-    {% endif %}
     <td>
         {% for d in server.domains %}
         <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
