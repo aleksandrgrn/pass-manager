@@ -18,6 +18,7 @@ specs/track-c-migrate-1-fix.md). Синтетический дамп — в фо
 from __future__ import annotations
 
 import re
+from unittest.mock import Mock
 
 import pytest
 
@@ -670,3 +671,40 @@ class TestReportReconciles:
         assert created == 1
         assert skipped == 2
         assert created + skipped == parsed
+
+
+# --------------------------------------------------------------------------- #
+# Порядок в конце import_legacy_data (FIX-MIGRATE-3)
+# --------------------------------------------------------------------------- #
+
+class LyingList(list):
+    """Изображает строку, исчезнувшую не увеличив ни один счётчик."""
+
+    def __len__(self):
+        return super().__len__() + 1
+
+
+class TestReportPrintedBeforeCommit:
+    """При расхождении отчёт уже напечатан, а коммит ещё не делался.
+
+    Порядок в конце import_legacy_data: посчитать → напечатать отчёт →
+    проверить сходимость (raise при расхождении) → только потом commit
+    (FIX-MIGRATE-3).
+    """
+
+    def test_mismatch_prints_report_and_skips_commit(self, app, monkeypatch, capsys):
+        """LyingList врёт про длину: счётчики не сходятся, отчёт на экране,
+        commit не вызван."""
+        tables = {'vps': [], 'domains': LyingList()}
+        commit = Mock()
+        monkeypatch.setattr(db.session, 'commit', commit)
+
+        with app.app_context():
+            with pytest.raises(RuntimeError):
+                import_legacy_data(tables, dry_run=False)
+
+        out = capsys.readouterr().out
+        # Отчёт напечатан до проверки: строка про domains есть в выводе.
+        assert 'domains: parsed 1' in out
+        # Коммита не было: расхождение — в базу ничего не ушло.
+        commit.assert_not_called()

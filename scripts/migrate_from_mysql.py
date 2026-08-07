@@ -410,9 +410,6 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
             db.session.add(Domain(domain=domain_name, server_id=vpsid))
         created_domains += 1
 
-    if not dry_run:
-        db.session.commit()
-
     domains_bound = created_domains
     domains_accounted = (
         domains_bound
@@ -422,14 +419,6 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
         + domains_skipped_orphan
     )
     vps_accounted = created_servers + skipped
-    if domains_accounted != len(domains_rows) or vps_accounted != len(vps_rows):
-        # Любая строка, что исчезла, не увеличив ни один счётчик, — дефект:
-        # именно он стоил нам ручной разовой проверки против боевого дампа.
-        raise RuntimeError(
-            'Migration report does not reconcile: '
-            f'domains accounted {domains_accounted} != {len(domains_rows)} '
-            f'parsed; vps accounted {vps_accounted} != {len(vps_rows)} parsed'
-        )
 
     print(f'\n✓ Imported: {created_servers} servers, {created_domains} domains, skipped {skipped}')
     print(f'  vps: parsed {len(vps_rows)}, created {created_servers}, '
@@ -441,6 +430,20 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
           f'orphan (no created server): {domains_skipped_orphan}, '
           f'wrong column count: {domains_skipped_len}')
     print(f'  notes with disk: {notes_with_disk}')
+
+    if domains_accounted != len(domains_rows) or vps_accounted != len(vps_rows):
+        # Любая строка, что исчезла, не увеличив ни один счётчик, — дефект:
+        # именно он стоил нам ручной разовой проверки против боевого дампа.
+        raise RuntimeError(
+            'Migration report does not reconcile: '
+            f'domains accounted {domains_accounted} != {len(domains_rows)} '
+            f'parsed; vps accounted {vps_accounted} != {len(vps_rows)} parsed'
+        )
+
+    # Сходимость отчёта проверена и напечатана; только теперь можно писать.
+    if not dry_run:
+        db.session.commit()
+
     return created_servers, created_domains, skipped
 
 
