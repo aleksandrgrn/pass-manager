@@ -47,9 +47,7 @@
                     <th><a href="?sort=provider&dir={{ next_dir }}"
                            class="{% if sort=='provider' %}sort-active{% endif %}">Провайдер {% if sort=='provider' %}{{ arrow }}{% endif %}</a></th>
                     <th>Логин</th>
-                    {% if passwords_visible %}
                     <th>Пароль (пров.)</th>
-                    {% endif %}
                     <th>Домены</th>
                     <th class="text-center"><a href="?sort=has_exim&dir={{ next_dir }}">exim</a></th>
                     <th class="text-center"><a href="?sort=has_squid&dir={{ next_dir }}">squid</a></th>

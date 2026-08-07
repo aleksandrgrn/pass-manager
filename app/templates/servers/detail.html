@@ -47,11 +47,11 @@
                 <div><dt class="text-muted inline">IP: </dt><dd class="inline font-mono">{{ server.ip_address or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Провайдер: </dt><dd class="inline">{{ server.provider or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Логин провайдера: </dt><dd class="inline">{{ server.provider_login or '—' }}</dd></div>
+                <div><dt class="text-muted inline">Пароль провайдера: </dt><dd class="inline font-mono">{{ server.provider_password or '—' }}</dd></div>
                 {% if passwords_visible %}
                 <div><dt class="text-muted inline">Пароль root: </dt><dd class="inline font-mono">{{ server.password or '—' }}</dd></div>
-                <div><dt class="text-muted inline">Пароль провайдера: </dt><dd class="inline font-mono">{{ server.provider_password or '—' }}</dd></div>
                 {% else %}
-                <p class="text-xs text-faint mt-2">Пароли скрыты (роль {{ current_user.role }}).</p>
+                <p class="text-xs text-faint mt-2">Пароль root скрыт (роль {{ current_user.role }}).</p>
                 {% endif %}
                 <div><dt class="text-muted inline">ОС: </dt><dd class="inline">{{ server.os or '—' }}</dd></div>
                 <div><dt class="text-muted inline">CPU: </dt><dd class="inline">{{ server.cpu or '—' }}</dd></div>
@@ -69,7 +69,6 @@
             </ul>
         </div>
 
-        {% if passwords_visible %}
         <div class="card p-4">
             <h2 class="text-sm uppercase tracking-wide text-muted mb-3">VPS Management</h2>
             <dl class="text-sm space-y-1">
@@ -81,7 +80,6 @@
                 <div><dt class="text-muted inline">Web pass: </dt><dd class="inline font-mono">{{ server.web_pass or '—' }}</dd></div>
             </dl>
         </div>
-        {% endif %}
 
         <div class="card p-4 md:col-span-2">
             <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Домены ({{ domains|length }})</h2>

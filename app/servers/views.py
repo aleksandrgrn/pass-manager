@@ -252,11 +252,13 @@ def delete(server_id):
 
 # --- HTMX inline editing endpoints ---
 
-PASSWORD_FIELD_KEYWORDS = ('password', 'pass')
-
-
 def _is_password_field(field_name):
-    return any(kw in field_name.lower() for kw in PASSWORD_FIELD_KEYWORDS)
+    """Секретное ли поле — по тому же списку, что режет форму редактирования.
+
+    Раньше сверялось по подстроке 'pass' и закрывало от админа provider_password,
+    web_pass, mgt_pass. Это лишнее: доступ к машине — только пароль root.
+    """
+    return field_name in PASSWORD_FORM_FIELDS
 
 
 @servers_bp.route('/<int:server_id>/field', methods=['POST'])

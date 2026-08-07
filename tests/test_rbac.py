@@ -52,7 +52,7 @@ class TestDetailPage:
         body = resp.get_data(as_text=True)
         assert 's3cret-root-pass' not in body
         # Должна быть индикация скрытия паролей
-        assert 'Пароли скрыты' in body
+        assert 'Пароль root скрыт' in body
 
     def test_superadmin_detail_has_password(self, superadmin_client, sample_server):
         body = superadmin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
@@ -251,7 +251,6 @@ class TestEditFormPasswords:
             f'/servers/{sample_server.id}/edit'
         ).get_data(as_text=True)
         assert 's3cret-root-pass' not in body
-        assert 'prov-pass-123' not in body
 
     def test_superadmin_edit_form_has_passwords(self, superadmin_client, sample_server):
         body = superadmin_client.get(
@@ -264,9 +263,49 @@ class TestEditFormPasswords:
     ):
         resp = admin_client.post(f'/servers/{sample_server.id}/edit', data={
             'name': 'vps-test-01', 'password': 'HACKED',
-            'provider_password': 'HACKED-2',
         })
         assert resp.status_code == 302
         db.session.refresh(sample_server)
         assert sample_server.password == 's3cret-root-pass'
-        assert sample_server.provider_password == 'prov-pass-123'
+
+
+# --------------------------------------------------------------------------- #
+# Граница проходит по паролю root, а не по подстроке "pass" в имени поля
+# --------------------------------------------------------------------------- #
+
+class TestOnlyRootPasswordIsSecret:
+    """Учётки провайдера и панелей видит и правит тот, кто видит сервер."""
+
+    @pytest.mark.parametrize('url', ['/servers/', '/servers/{id}', '/servers/{id}/edit'])
+    def test_admin_sees_provider_password(self, admin_client, sample_server, url):
+        body = admin_client.get(
+            url.format(id=sample_server.id)
+        ).get_data(as_text=True)
+        assert 'prov-pass-123' in body
+        assert 's3cret-root-pass' not in body
+
+    def test_admin_can_inline_edit_provider_password(self, admin_client, sample_server, db):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/field',
+            data={'field': 'provider_password', 'value': 'prov-new'},
+        )
+        assert resp.status_code == 200
+        db.session.refresh(sample_server)
+        assert sample_server.provider_password == 'prov-new'
+
+    def test_admin_still_cannot_inline_edit_root_password(self, admin_client, sample_server):
+        resp = admin_client.post(
+            f'/servers/{sample_server.id}/field',
+            data={'field': 'password', 'value': 'HACKED'},
+        )
+        assert resp.status_code == 403
+
+    def test_admin_edit_post_can_change_provider_password(self, admin_client, sample_server, db):
+        resp = admin_client.post(f'/servers/{sample_server.id}/edit', data={
+            'name': 'vps-test-01', 'provider_password': 'prov-via-form',
+            'password': 'HACKED',
+        })
+        assert resp.status_code == 302
+        db.session.refresh(sample_server)
+        assert sample_server.provider_password == 'prov-via-form'
+        assert sample_server.password == 's3cret-root-pass'
