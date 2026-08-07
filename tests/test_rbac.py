@@ -309,3 +309,38 @@ class TestOnlyRootPasswordIsSecret:
         db.session.refresh(sample_server)
         assert sample_server.provider_password == 'prov-via-form'
         assert sample_server.password == 's3cret-root-pass'
+
+
+# --------------------------------------------------------------------------- #
+# Шторка на паролях в списке
+# --------------------------------------------------------------------------- #
+
+class TestPasswordMask:
+    """Пароли доходят до страницы, но закрыты шторкой из точек.
+
+    Проверяем присутствие правила, а не картинку: поведение (клик раскрывает
+    на три секунды, Esc отменяет правку) живёт в браузере и проверяется руками.
+    Здесь ловится единственный отказ, который тихо пройдёт мимо всех остальных
+    тестов, — если правило маски удалят при следующей правке вёрстки и одна из
+    колонок останется открытой.
+    """
+
+    MASK = ':is([data-inline-edit="password"], [data-inline-edit="provider_password"])'
+
+    def test_mask_covers_both_password_columns(self, superadmin_client, sample_server):
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert self.MASK in body, 'селектор шторки пропал из base.html'
+        assert 'font-size: 0;' in body, 'шторка не схлопывает настоящий текст'
+        assert "content: '••••••••'" in body, 'точки не рисуются'
+
+    def test_mask_lifts_for_revealed_and_edited_cells(self, superadmin_client, sample_server):
+        """Без этих исключений ячейку нельзя ни прочитать, ни отредактировать:
+        точки остались бы висеть поверх поля ввода."""
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert f'{self.MASK}:is(.revealed, [data-editing="1"])' in body
+
+    def test_password_value_still_reachable_for_copying(self, superadmin_client, sample_server):
+        """Шторка прячет от глаз, а не удаляет: копирование по клику берёт
+        значение из разметки, и оно обязано там остаться."""
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert 's3cret-root-pass' in body

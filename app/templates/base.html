@@ -125,6 +125,32 @@
       table.tbl td [data-inline-edit="notes"] { white-space: normal; }
       .cell-num  { font-family: ui-monospace, Menlo, Consolas, monospace;
                    font-variant-numeric: tabular-nums; color: var(--muted); }
+      /* Шторка на паролях. Настоящее значение остаётся в разметке — его читают
+         копирование по клику и инлайн-правка, обе берут cell.textContent, —
+         но на экран не выходит: font-size:0 схлопывает текст, точки рисует
+         ::before. Заодно колонка перестаёт растягиваться по самому длинному
+         паролю. Восемь точек всегда, независимо от длины: длина пароля — тоже
+         подсказка, а прячемся мы как раз от взгляда со стороны.
+         Маскируем шире, чем скрываем по правам: root-пароль не-суперадмину не
+         отдаётся вовсе (проверка в шаблонах по passwords_visible), пароль
+         провайдера видят все, кто видит сервер, — но на экране закрыты оба.
+         Два списка не сводить в один: сломается либо маска, либо права. */
+      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]) {
+        font-size: 0;
+      }
+      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"])::before {
+        content: '••••••••'; font-size: 12px; letter-spacing: 2px; color: var(--muted);
+      }
+      /* Открыто: на 3 секунды после клика и на всё время правки. ::before у
+         правимой ячейки гасим отдельно — он висит на самой ячейке, а редактор
+         подставляет поле внутрь неё, и точки иначе остаются слева, отжимая
+         поле вбок. */
+      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]):is(.revealed, [data-editing="1"]) {
+        font-size: 12px;
+      }
+      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]):is(.revealed, [data-editing="1"])::before {
+        content: none;
+      }
 
       /* ---- Navbar (тёмная верхняя полоса, Фаза 3) ---- */
       .navbar { background: var(--nav-bg); color: var(--nav-fg);
@@ -178,6 +204,9 @@
             const field = cell.dataset.inlineEdit;
             const serverId = cell.dataset.serverId;
             const current = cell.textContent.trim();
+            // Держим прежнее значение в свойстве узла, а не в data-атрибуте:
+            // атрибут положил бы пароль в разметку вторым экземпляром.
+            cell._prevValue = current;
             cell.dataset.editing = '1';
             cell.innerHTML = `<form hx-post="/servers/${serverId}/field" hx-target="closest [data-inline-edit]" hx-swap="outerHTML"
                 class="inline-flex w-full">
@@ -223,6 +252,31 @@
             t._hide = setTimeout(() => { t.style.opacity = '0'; }, 1200);
         }
 
+        // Шторка снимается на три секунды: хватит переписать пароль руками в
+        // консоль, где буфер не проходит, но с экрана он уйдёт сам. В буфере он
+        // к этому моменту уже лежит, поэтому дольше держать нечего.
+        // Класс вешаем на любую ячейку, а не только на парольную: реагирует на
+        // него один лишь CSS выше, и список полей остаётся в одном месте.
+        const PW_REVEAL_MS = 3000;
+        function revealCell(cell) {
+            cell.classList.add('revealed');
+            clearTimeout(cell._unreveal);
+            cell._unreveal = setTimeout(() => cell.classList.remove('revealed'), PW_REVEAL_MS);
+        }
+        // Отмена правки. До этого выйти из редактора можно было только Enter'ом
+        // или перезагрузкой: брошенное поле висело сколько угодно, с открытым
+        // паролем внутри и мимо всякой шторки. Ищем открытый редактор по всей
+        // странице, а не под фокусом, — иначе Esc не сработает после щелчка мимо.
+        function cancelInlineEdit(cell) {
+            cell.textContent = cell._prevValue || '—';
+            delete cell._prevValue;
+            delete cell.dataset.editing;
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            document.querySelectorAll('[data-inline-edit][data-editing="1"]').forEach(cancelInlineEdit);
+        });
+
         let _cellClickTimer = null;
         document.addEventListener('click', (e) => {
             const cell = e.target.closest('[data-inline-edit]');
@@ -231,7 +285,7 @@
             const text = cell.textContent.trim();
             _cellClickTimer = setTimeout(() => {
                 _cellClickTimer = null;
-                if (text && text !== '—') { copyToClipboard(text); showCopiedToast(); }
+                if (text && text !== '—') { copyToClipboard(text); showCopiedToast(); revealCell(cell); }
             }, 220);
         });
         document.addEventListener('dblclick', (e) => {
