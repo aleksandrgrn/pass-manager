@@ -76,7 +76,10 @@ class Config:
     LOCAL_ADMIN_PASSWORD = os.environ.get('LOCAL_ADMIN_PASSWORD', '')
 
     # Pagination
-    ITEMS_PER_PAGE = 50
+    # Больше размера парка (401 сервер на 2026-08-07), чтобы список был одной
+    # страницей: отдел листает его сверху вниз, а шапка таблицы липкая. Блок
+    # кнопок внизу рисуется под `pagination.pages > 1` и пропадает сам.
+    ITEMS_PER_PAGE = 500
 
     # VPS Manager service-контракт (/api/svc, Track C A2)
     VPS_MANAGER_API_URL = os.environ.get('VPS_MANAGER_API_URL', 'http://127.0.0.1:5000/api/svc')
