@@ -237,3 +237,36 @@ class TestRoleProperties:
         assert u.is_admin is True
         assert u.is_superadmin is True
         assert u.can_view_passwords is True
+
+
+# --------------------------------------------------------------------------- #
+# Форма редактирования — та же граница, что у списка и карточки
+# --------------------------------------------------------------------------- #
+
+class TestEditFormPasswords:
+    """GET/POST /servers/<id>/edit: пароли — только суперадмину."""
+
+    def test_admin_edit_form_has_no_passwords(self, admin_client, sample_server):
+        body = admin_client.get(
+            f'/servers/{sample_server.id}/edit'
+        ).get_data(as_text=True)
+        assert 's3cret-root-pass' not in body
+        assert 'prov-pass-123' not in body
+
+    def test_superadmin_edit_form_has_passwords(self, superadmin_client, sample_server):
+        body = superadmin_client.get(
+            f'/servers/{sample_server.id}/edit'
+        ).get_data(as_text=True)
+        assert 's3cret-root-pass' in body
+
+    def test_admin_edit_post_cannot_change_password(
+        self, admin_client, sample_server, db,
+    ):
+        resp = admin_client.post(f'/servers/{sample_server.id}/edit', data={
+            'name': 'vps-test-01', 'password': 'HACKED',
+            'provider_password': 'HACKED-2',
+        })
+        assert resp.status_code == 302
+        db.session.refresh(sample_server)
+        assert sample_server.password == 's3cret-root-pass'
+        assert sample_server.provider_password == 'prov-pass-123'
