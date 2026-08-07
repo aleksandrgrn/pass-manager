@@ -108,6 +108,16 @@
          остальным 400 строкам эта ширина не нужна. Ограничение на внутреннем
          div, а не на td: max-width у ячейки таблицы браузеры соблюдают вольно. */
       .cell-domains { max-width: 22rem; white-space: normal; }
+      /* Комментарий — свободный текст, ничем не ограниченный, и при nowrap один
+         длинный комментарий растягивал таблицу целиком. Пароль — второй по
+         непредсказуемости: 24 символа у сгенерированных, но у перенесённых из
+         старой системы длина любая, и переносить его надо посреди слова.
+         Селектор по data-inline-edit, а не по классу: тогда правило работает и
+         в строке, и в ячейке, которую HTMX перерисовывает после инлайн-правки. */
+      table.tbl td [data-inline-edit="notes"] { max-width: 20rem; white-space: normal; }
+      table.tbl td [data-inline-edit="password"],
+      table.tbl td [data-inline-edit="provider_password"] {
+        max-width: 11rem; white-space: normal; overflow-wrap: anywhere; }
       .cell-num  { font-family: ui-monospace, Menlo, Consolas, monospace;
                    font-variant-numeric: tabular-nums; color: var(--muted); }
 
