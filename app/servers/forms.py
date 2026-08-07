@@ -44,9 +44,16 @@ class ServerForm(FlaskForm):
 
 
 class ServerFilterForm(FlaskForm):
-    """Form for filtering the servers list."""
+    """Фильтры списка серверов.
+
+    Галка именно «показывать неактивные», а не «только активные»: снятый
+    чекбокс браузер не отправляет вовсе, и «первый заход» неотличим от
+    «человек снял галку». При такой формулировке оба случая означают одно и
+    то же и означают нужное — прятать неактуальные. Обратная формулировка
+    потребовала бы скрытого поля-маркера, иначе галку нельзя было бы снять.
+    """
     q = StringField('Поиск', validators=[Optional()])
-    active = BooleanField('Только активные', default=False)
+    show_inactive = BooleanField('Показывать неактивные')
 
 
 # Whitelist of fields allowed for inline HTMX editing.

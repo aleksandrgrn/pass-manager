@@ -44,7 +44,11 @@ def _apply_filters(query, form):
             Server.provider.ilike(like),
             Server.notes.ilike(like),
         ))
-    if form.active.data:
+    # Неактуальные (в старой системе — тире в начале имени, таких 182 из 401)
+    # прячем из обычного просмотра, но не из поиска: пустой экран в ответ на
+    # запрос о существующем сервере читается как «его нет», а это худший из
+    # возможных ответов — человек пойдёт заводить дубль.
+    if not form.show_inactive.data and not q:
         query = query.filter(Server.active.is_(True))
     return query
 
