@@ -17,6 +17,8 @@ specs/track-c-migrate-1-fix.md). Синтетический дамп — в фо
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.extensions import db
@@ -462,7 +464,9 @@ class TestDryRunReport:
         out = capsys.readouterr().out
         assert 'vps: parsed 3, created 3, skipped 0 (wrong columns: 0, empty name: 0)' in out
         assert 'inactive by dash: 1' in out
-        assert 'domains: bound 3, skipped by vpsid: 0' in out
+        assert 'domains: parsed 3, bound 3, ' \
+               'skipped by vpsid: 0, empty name: 0, '\
+               'orphan (no created server): 0, wrong column count: 0' in out
         assert 'notes with disk: 1' in out
 
     def test_report_does_not_print_password_values(self, app, sql_dump, capsys):
@@ -474,3 +478,195 @@ class TestDryRunReport:
         out = capsys.readouterr().out
         assert 'pass-alpha' not in out
         assert 'pass-beta' not in out
+
+
+# --------------------------------------------------------------------------- #
+# Домены: сироты, пустое имя, инвариант отчёта (FIX-MIGRATE-2)
+# --------------------------------------------------------------------------- #
+
+_ORPHAN_SQL_VPS = (
+    "CREATE TABLE `vps` (`id` int, `VPS` varchar(19), `Login` varchar(10), "
+    "`Password` varchar(20), `IP` varchar(16), `Provider` varchar(32), "
+    "`PLogin` varchar(60), `PPassword` varchar(60), `exim` varchar(4), "
+    "`squid` varchar(5), `vpn` varchar(3), `Notes` varchar(86));\n"
+    "INSERT INTO `vps` VALUES "
+    "(1, 'srv-1', 'root', 'p', '1.1.1.1', 'prov', 'l', 'pp', '0', '0', '0', 'n');\n"
+)
+
+_DOMAINS_SQL = (
+    "CREATE TABLE `domains` (`domain_id` int, `domain` varchar(32), `vpsid` varchar(32));\n"
+    "INSERT INTO `domains` VALUES "
+)
+
+
+def _domain_report(out):
+    """Вернуть dict со счётчиками доменов из строки отчёта 'domains: …'."""
+    line = next(
+        l for l in out.splitlines()
+        if l.strip().startswith('domains:')
+    )
+    pattern = (
+        r'parsed (\d+), bound (\d+), '
+        r'skipped by vpsid: (\d+), empty name: (\d+), '
+        r'orphan \(no created server\): (\d+), wrong column count: (\d+)'
+    )
+    m = re.search(pattern, line)
+    assert m, f'не удалось распарсить строку отчёта: {line!r}'
+    return {
+        'parsed': int(m.group(1)),
+        'bound': int(m.group(2)),
+        'vpsid': int(m.group(3)),
+        'empty': int(m.group(4)),
+        'orphan': int(m.group(5)),
+        'len': int(m.group(6)),
+    }
+
+
+def _vps_report(out):
+    """Вернуть (parsed, created, skipped) из строки отчёта про vps."""
+    line = next(
+        l for l in out.splitlines()
+        if l.strip().startswith('vps: parsed')
+    )
+    m = re.search(r'vps: parsed (\d+), created (\d+), skipped (\d+)', line)
+    assert m, f'нет строки отчёта по vps: {line!r}'
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+class TestDomainsOrphan:
+    """Домен, чей vpsid не указывает на реально созданный сервер, не переносится."""
+
+    def test_domain_to_deleted_server_not_imported(self, app, tmp_path):
+        """vpsid указывает на сервер, которого нет в дампе → сирота, не создаём."""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, 'alpha.example.com', '1'),\n"    # валидный → привязывается
+            + "(2, 'ghost.example.com', '99');\n"   # сервера 99 в дампе нет → сирота
+        )
+        path = tmp_path / 'orphan1.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            servers, domains, _ = import_legacy_data(tables, dry_run=False, reset=True)
+
+        assert servers == 1
+        assert domains == 1                                   # привязан только alpha
+        assert Domain.query.count() == 1
+        assert db.session.query(Domain).filter_by(server_id=1).count() == 1
+        assert db.session.query(Domain).filter_by(server_id=99).count() == 0
+
+    def test_domain_to_skipped_server_not_imported(self, app, tmp_path, capsys):
+        """vpsid указывает на сервер, пропущенный из-за пустого имени → сирота."""
+        sql = (
+            "CREATE TABLE `vps` (`id` int, `VPS` varchar(19), `Login` varchar(10), "
+            "`Password` varchar(20), `IP` varchar(16), `Provider` varchar(32), "
+            "`PLogin` varchar(60), `PPassword` varchar(60), `exim` varchar(4), "
+            "`squid` varchar(5), `vpn` varchar(3), `Notes` varchar(86));\n"
+            # сервер с пустым именем → пропускается
+            "INSERT INTO `vps` VALUES "
+            "(50, '', 'root', 'p', '1.1.1.1', 'prov', 'l', 'pp', '0', '0', '0', 'n');\n"
+            + _DOMAINS_SQL
+            + "(1, 'hang.example.com', '50');\n"
+        )
+        path = tmp_path / 'orphan2.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        report = _domain_report(out)
+        assert report['parsed'] == 1
+        assert report['bound'] == 0
+        assert report['orphan'] == 1          # сервера 50 создано не будет
+
+    def test_empty_name_domain_is_counted(self, app, tmp_path, capsys):
+        """Домен с пустым именем учитывается своим счётчиком, а не теряется."""
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, '', '1');\n"                 # пустое имя → свой счётчик
+        )
+        path = tmp_path / 'emptyname.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        report = _domain_report(out)
+        assert report['parsed'] == 1
+        assert report['bound'] == 0
+        assert report['empty'] == 1
+        # строка не «пропала»: числится в разбивке → отчёт сходится
+        assert (
+            report['parsed']
+            == report['bound'] + report['vpsid'] + report['empty']
+            + report['orphan'] + report['len']
+        )
+
+
+class TestReportReconciles:
+    """Инварианты отчёта: ни одна строка не исчезает без счётчика (FIX-MIGRATE-2)."""
+
+    def test_domains_report_reconciles_all_kinds(self, app, tmp_path, capsys):
+        """bound + все счётчики отброшенных == len(domains_rows).
+
+        Дамп со всеми видами потери сразу. Ассерт через счётчики, а не через
+        магические числа: новый необсчитанный continue уронит равенство.
+        """
+        sql = (
+            _ORPHAN_SQL_VPS
+            + _DOMAINS_SQL
+            + "(1, 'ok.example.com', '1'),\n"       # bound
+            + "(2, 'ghost.example.com', '99'),\n"   # orphan: сервера нет в дампе
+            + "(3, 'bad.example.com', 'abc'),\n"    # vpsid не число
+            + "(4, '', '1'),\n"                     # пустое имя
+            + "(5);\n"                              # короткая строка (len<3)
+        )
+        path = tmp_path / 'inv_domains.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        assert len(tables['domains']) == 5
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        report = _domain_report(out)
+        assert report['parsed'] == 5
+        # Инвариант: bound + все счётчики отброшенных == разобрано.
+        # Новый необсчитанный continue уменьшит правую сумму — равенство падёт.
+        assert (
+            report['bound'] + report['vpsid'] + report['empty']
+            + report['orphan'] + report['len'] == report['parsed']
+        )
+
+    def test_vps_report_reconciles(self, app, tmp_path, capsys):
+        """created + skipped == len(vps_rows)."""
+        sql = (
+            _ORPHAN_SQL_VPS
+            # пустое имя → skip
+            + "INSERT INTO `vps` VALUES "
+            "(2, '', 'root', 'p2', '1.1.1.2', 'p', 'l', 'pp', '0', '0', '0', 'n');\n"
+            # неверное число колонок → skip
+            + "INSERT INTO `vps` VALUES (7, 'x');\n"
+        )
+        path = tmp_path / 'inv_vps.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        assert len(tables['vps']) == 3
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        parsed, created, skipped = _vps_report(out)
+        assert parsed == 3
+        assert created == 1
+        assert skipped == 2
+        assert created + skipped == parsed

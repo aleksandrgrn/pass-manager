@@ -272,8 +272,14 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     skipped_wrong_cols = 0
     skipped_empty_name = 0
     inactive_by_dash = 0
-    domains_skipped_vpsid = 0
     notes_with_disk = 0
+    # Набор id серверов, которые реально созданы (после всех пропусков).
+    # Домен, чей vpsid не входит в этот набор, — сирота, его не переносим.
+    created_server_ids = set()
+    domains_skipped_len = 0
+    domains_skipped_vpsid = 0
+    domains_skipped_empty_name = 0
+    domains_skipped_orphan = 0
 
     for row in vps_rows:
         if len(row) != 12:
@@ -369,6 +375,7 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
         else:
             db.session.merge(server)
         created_servers += 1
+        created_server_ids.add(server_id)
 
     # Domains — legacy table column order: (domain_id, domain, vpsid).
     # vpsid это varchar: приводим к числу явно. Эвристики «угадай порядок
@@ -376,6 +383,7 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     # схемы в тихий мусор.
     for row in domains_rows:
         if len(row) < 3:
+            domains_skipped_len += 1
             continue
         domain_name = row[1]
         vpsid_raw = row[2]
@@ -387,6 +395,14 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
             domains_skipped_vpsid += 1
             continue
         if not isinstance(domain_name, str) or not domain_name.strip():
+            domains_skipped_empty_name += 1
+            continue
+        # Домен указывает на сервер, которого в новой базе не будет:
+        # либо строки vps с таким id нет в дампе, либо сервер был пропущен
+        # (пустое имя и т.п.). Такой домен не переносим — считаем и не вешаем
+        # ссылку в никуда.
+        if vpsid not in created_server_ids:
+            domains_skipped_orphan += 1
             continue
         if dry_run:
             print(f'[dry-run] Would import domain {domain_name} → server {vpsid}')
@@ -397,11 +413,33 @@ def import_legacy_data(tables, *, dry_run=False, reset=False, group=None):
     if not dry_run:
         db.session.commit()
 
+    domains_bound = created_domains
+    domains_accounted = (
+        domains_bound
+        + domains_skipped_len
+        + domains_skipped_vpsid
+        + domains_skipped_empty_name
+        + domains_skipped_orphan
+    )
+    vps_accounted = created_servers + skipped
+    if domains_accounted != len(domains_rows) or vps_accounted != len(vps_rows):
+        # Любая строка, что исчезла, не увеличив ни один счётчик, — дефект:
+        # именно он стоил нам ручной разовой проверки против боевого дампа.
+        raise RuntimeError(
+            'Migration report does not reconcile: '
+            f'domains accounted {domains_accounted} != {len(domains_rows)} '
+            f'parsed; vps accounted {vps_accounted} != {len(vps_rows)} parsed'
+        )
+
     print(f'\n✓ Imported: {created_servers} servers, {created_domains} domains, skipped {skipped}')
     print(f'  vps: parsed {len(vps_rows)}, created {created_servers}, '
           f'skipped {skipped} (wrong columns: {skipped_wrong_cols}, empty name: {skipped_empty_name})')
     print(f'  inactive by dash: {inactive_by_dash}')
-    print(f'  domains: bound {created_domains}, skipped by vpsid: {domains_skipped_vpsid}')
+    print(f'  domains: parsed {len(domains_rows)}, bound {created_domains}, '
+          f'skipped by vpsid: {domains_skipped_vpsid}, '
+          f'empty name: {domains_skipped_empty_name}, '
+          f'orphan (no created server): {domains_skipped_orphan}, '
+          f'wrong column count: {domains_skipped_len}')
     print(f'  notes with disk: {notes_with_disk}')
     return created_servers, created_domains, skipped
 
