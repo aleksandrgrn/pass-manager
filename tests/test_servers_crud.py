@@ -184,3 +184,44 @@ class TestPagination:
         # Должна быть пагинация с двумя ссылками
         assert 'page=2' in body
         assert 'page=1' in body
+
+
+# --------------------------------------------------------------------------- #
+# Неактуальные серверы: спрятаны в просмотре, находятся поиском
+# --------------------------------------------------------------------------- #
+
+class TestInactiveVisibility:
+    """182 сервера из 401 приехали из старой системы неактуальными."""
+
+    @pytest.fixture()
+    def inactive_server(self, db, default_group):
+        server = Server(group_id=default_group.id, name='old-mail-relay',
+                        ip_address='192.0.2.99', active=False)
+        db.session.add(server)
+        db.session.commit()
+        return server
+
+    def test_browsing_hides_inactive(self, admin_client, sample_server, inactive_server):
+        body = admin_client.get('/servers/').get_data(as_text=True)
+        assert 'old-mail-relay' not in body
+        assert 'vps-test-01' in body
+
+    def test_search_finds_inactive(self, admin_client, inactive_server):
+        """Главное свойство: поиск не врёт, что сервера нет."""
+        body = admin_client.get('/servers/?q=mail-relay').get_data(as_text=True)
+        assert 'old-mail-relay' in body
+
+    def test_checkbox_shows_inactive(self, admin_client, inactive_server):
+        body = admin_client.get('/servers/?show_inactive=y').get_data(as_text=True)
+        assert 'old-mail-relay' in body
+
+    def test_sort_links_keep_filters(self, admin_client, sample_server):
+        import re
+        body = admin_client.get(
+            '/servers/?q=vps&show_inactive=y'
+        ).get_data(as_text=True)
+        links = re.findall(r'href="\?sort=[^"]*"', body)
+        assert links, 'ссылок сортировки в шапке не нашлось'
+        for link in links:
+            assert 'q=vps' in link, f'ссылка теряет поиск: {link}'
+            assert 'show_inactive=y' in link, f'ссылка теряет галку: {link}'

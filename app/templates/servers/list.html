@@ -11,8 +11,8 @@
         <form method="GET" action="{{ url_for('servers.list_servers') }}" class="flex flex-wrap items-center gap-2">
             {{ filter_form.q(class_='px-3 py-2 border border-line bg-surface text-ink rounded text-sm placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/40', placeholder='Поиск по имени/IP/провайдеру', value=request.args.get('q','')) }}
             <label class="inline-flex items-center gap-2 text-sm text-muted">
-                {{ filter_form.active(checked=request.args.get('active')=='y') }}
-                {{ filter_form.active.label.text }}
+                {{ filter_form.show_inactive(checked=request.args.get('show_inactive')=='y') }}
+                {{ filter_form.show_inactive.label.text }}
             </label>
             <input type="hidden" name="sort" value="{{ sort }}">
             <input type="hidden" name="dir" value="{{ direction }}">
@@ -33,25 +33,28 @@
                 <tr>
                     {% set next_dir = 'desc' if direction == 'asc' else 'asc' %}
                     {% set arrow = '↓' if direction == 'asc' else '↑' %}
+                    {# Хвост фильтров, который обязана нести каждая ссылка: без него
+                       щелчок по заголовку молча сбрасывал поиск и галку. #}
+                    {% set filter_qs %}{% if request.args.get('q') %}&q={{ request.args.get('q')|urlencode }}{% endif %}{% if request.args.get('show_inactive') %}&show_inactive=y{% endif %}{% endset %}
                     <th>
-                        <a href="?sort=id&dir={{ next_dir }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}{% if request.args.get('active') %}&active=y{% endif %}"
+                        <a href="?sort=id&dir={{ next_dir }}{{ filter_qs }}"
                            class="{% if sort=='id' %}sort-active{% endif %}">ID {% if sort=='id' %}{{ arrow }}{% endif %}</a>
                     </th>
-                    <th><a href="?sort=name&dir={{ next_dir }}"
+                    <th><a href="?sort=name&dir={{ next_dir }}{{ filter_qs }}"
                            class="{% if sort=='name' %}sort-active{% endif %}">Название {% if sort=='name' %}{{ arrow }}{% endif %}</a></th>
                     {% if passwords_visible %}
                     <th>Пароль</th>
                     {% endif %}
-                    <th><a href="?sort=ip_address&dir={{ next_dir }}"
+                    <th><a href="?sort=ip_address&dir={{ next_dir }}{{ filter_qs }}"
                            class="{% if sort=='ip_address' %}sort-active{% endif %}">IP {% if sort=='ip_address' %}{{ arrow }}{% endif %}</a></th>
-                    <th><a href="?sort=provider&dir={{ next_dir }}"
+                    <th><a href="?sort=provider&dir={{ next_dir }}{{ filter_qs }}"
                            class="{% if sort=='provider' %}sort-active{% endif %}">Провайдер {% if sort=='provider' %}{{ arrow }}{% endif %}</a></th>
                     <th>Логин</th>
                     <th>Пароль (пров.)</th>
                     <th>Домены</th>
-                    <th class="text-center"><a href="?sort=has_exim&dir={{ next_dir }}">exim</a></th>
-                    <th class="text-center"><a href="?sort=has_squid&dir={{ next_dir }}">squid</a></th>
-                    <th class="text-center"><a href="?sort=has_vpn&dir={{ next_dir }}">vpn</a></th>
+                    <th class="text-center"><a href="?sort=has_exim&dir={{ next_dir }}{{ filter_qs }}">exim</a></th>
+                    <th class="text-center"><a href="?sort=has_squid&dir={{ next_dir }}{{ filter_qs }}">squid</a></th>
+                    <th class="text-center"><a href="?sort=has_vpn&dir={{ next_dir }}{{ filter_qs }}">vpn</a></th>
                     <th>Комментарии</th>
                     <th class="text-center">Действия</th>
                 </tr>
@@ -74,7 +77,7 @@
     {% if pagination.pages > 1 %}
     <nav class="flex justify-center gap-1 text-sm">
         {% for p in range(1, pagination.pages + 1) %}
-         <a href="?page={{ p }}&sort={{ sort }}&dir={{ direction }}{% if request.args.get('q') %}&q={{ request.args.get('q') }}{% endif %}{% if request.args.get('active') %}&active=y{% endif %}"
+         <a href="?page={{ p }}&sort={{ sort }}&dir={{ direction }}{{ filter_qs }}"
            class="px-3 py-1 rounded-md border tabular-nums transition
            {% if p == pagination.page %}bg-accent text-accentfg border-accent{% else %}bg-surface text-muted border-line hover:bg-surface2 transition{% endif %}">{{ p }}</a>
         {% endfor %}
