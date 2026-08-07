@@ -1,18 +1,19 @@
 """Тесты миграционного парсера .sql дампа (scripts/migrate_from_mysql.py).
 
-Синтетический дамп построен по формату mysqldump:
-    INSERT INTO `<table>` VALUES (...), (...);
+Переписаны под настоящую схему старой базы (SHOW CREATE TABLE с боевого дампа,
+specs/track-c-migrate-1-fix.md). Синтетический дамп — в формате mysqldump.
 
-Порядок колонок `vps` (id-first, 15 колонок):
-    id, name, password, ip, provider, plogin, ppassword,
-    exim, squid, vpn, notes, active, os, cpu, ram
+Порядок колонок `vps` (12 колонок):
+    id, VPS, Login, Password, IP, Provider, PLogin, PPassword, exim, squid, vpn, Notes
 
-Порядок `vps_details` (7 колонок):
-    vps_id, website, web_login, web_pass,
-    vps_management, mgt_login, mgt_pass
+Порядок `vps_details` (6 колонок):
+    vps_id, active, os, cpu, ram, drive
+
+Порядок `vps_management` (7 колонок):
+    vps_id, website, web_login, web_pass, vps_management, mgt_login, mgt_pass
 
 Порядок `domains` (3 колонки):
-    domain_id, domain, vpsid
+    domain_id, domain, vpsid      (vpsid — varchar, приводится к числу явно)
 """
 from __future__ import annotations
 
@@ -38,50 +39,61 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 
 CREATE TABLE `vps` (
   `id` int(11) NOT NULL,
-  `VPS` varchar(200) NOT NULL,
-  `Password` varchar(200) DEFAULT NULL,
-  `IP` varchar(45) DEFAULT NULL,
-  `Provider` varchar(200) DEFAULT NULL,
-  `PLogin` varchar(200) DEFAULT NULL,
-  `PPassword` varchar(200) DEFAULT NULL,
-  `exim` tinyint(1) NOT NULL DEFAULT 0,
-  `squid` tinyint(1) NOT NULL DEFAULT 0,
-  `vpn` tinyint(1) NOT NULL DEFAULT 0,
-  `Notes` text,
-  `active` tinyint(1) NOT NULL DEFAULT 1,
-  `os` varchar(128) DEFAULT NULL,
-  `cpu` varchar(128) DEFAULT NULL,
-  `ram` varchar(64) DEFAULT NULL
+  `VPS` varchar(19) DEFAULT NULL,
+  `Login` varchar(10) DEFAULT NULL,
+  `Password` varchar(20) DEFAULT NULL,
+  `IP` varchar(16) DEFAULT NULL,
+  `Provider` varchar(32) DEFAULT NULL,
+  `PLogin` varchar(60) DEFAULT NULL,
+  `PPassword` varchar(60) DEFAULT NULL,
+  `exim` varchar(4) DEFAULT NULL,
+  `squid` varchar(5) DEFAULT NULL,
+  `vpn` varchar(3) DEFAULT NULL,
+  `Notes` varchar(86) DEFAULT NULL
 );
 
 INSERT INTO `vps` VALUES
-(1, 'vps-alpha', 'pass-alpha', '192.0.2.11', 'Hetzner', 'root', 'pp-alpha', 1, 0, 0, 'Mail relay', 1, 'Ubuntu 22.04', '2 vCPU', '4 GB'),
-(2, 'vps-beta',  'pass-beta',  '192.0.2.12', 'DigitalOcean', 'root', 'pp-beta', 0, 1, 1, 'Squid+VPN', 1, 'Debian 12', '4 vCPU', '8 GB');
+(1, 'vps-alpha', 'admin', 'pass-alpha', '192.0.2.11', 'Hetzner', 'hlogin', 'hpp', '1', '0', '0', 'Mail relay'),
+(2, 'vps-beta', '', 'pass-beta', '192.0.2.12', 'DigitalOcean', 'dlogin', 'dpp', '0', '1', '1', 'Squid+VPN'),
+(3, '- old.example.com', 'root', 'pass-old', '192.0.2.13', NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 CREATE TABLE `vps_details` (
   `vps_id` int(11) NOT NULL,
-  `website` varchar(255) DEFAULT NULL,
-  `web_login` varchar(255) DEFAULT NULL,
-  `web_pass` varchar(255) DEFAULT NULL,
-  `vps_management` varchar(255) DEFAULT NULL,
-  `mgt_login` varchar(255) DEFAULT NULL,
-  `mgt_pass` varchar(255) DEFAULT NULL
+  `active` int(11) DEFAULT NULL,
+  `os` varchar(32) DEFAULT NULL,
+  `cpu` varchar(64) DEFAULT NULL,
+  `ram` varchar(32) DEFAULT NULL,
+  `drive` varchar(32) DEFAULT NULL
 );
 
 INSERT INTO `vps_details` VALUES
+(1, 1, 'Ubuntu 22.04', '2 vCPU', '4 GB', 'SSD 80 GB'),
+(2, 1, 'Debian 12', '4 vCPU', '8 GB', '');
+
+CREATE TABLE `vps_management` (
+  `vps_id` int(11) NOT NULL,
+  `website` varchar(64) DEFAULT NULL,
+  `web_login` varchar(32) DEFAULT NULL,
+  `web_pass` varchar(64) DEFAULT NULL,
+  `vps_management` varchar(64) DEFAULT NULL,
+  `mgt_login` varchar(64) DEFAULT NULL,
+  `mgt_pass` varchar(64) DEFAULT NULL
+);
+
+INSERT INTO `vps_management` VALUES
 (1, 'https://console.hetzner.com', 'hcloud', 'web-pass-1', 'https://mgmt.hetzner.com', 'admin', 'mgt-pass-1'),
 (2, 'https://cloud.digitalocean.com', 'do-user', 'web-pass-2', NULL, NULL, NULL);
 
 CREATE TABLE `domains` (
   `domain_id` int(11) NOT NULL,
-  `domain` varchar(256) NOT NULL,
-  `vpsid` int(11) NOT NULL
+  `domain` varchar(32) NOT NULL,
+  `vpsid` varchar(32) NOT NULL
 );
 
 INSERT INTO `domains` VALUES
-(101, 'alpha.example.com', 1),
-(102, 'mail.alpha.example.com', 1),
-(201, 'beta.example.org', 2);
+(101, 'alpha.example.com', '1'),
+(102, 'mail.alpha.example.com', '1'),
+(201, 'beta.example.org', '2');
 """
 
 
@@ -102,42 +114,62 @@ class TestParseSqlDump:
 
     def test_parses_all_tables(self, sql_dump):
         tables = parse_sql_dump(str(sql_dump))
-        assert set(tables.keys()) == {'vps', 'vps_details', 'domains'}
+        assert set(tables.keys()) == {'vps', 'vps_details', 'vps_management', 'domains'}
 
-    def test_parses_two_servers(self, sql_dump):
+    def test_parses_three_servers(self, sql_dump):
         tables = parse_sql_dump(str(sql_dump))
-        assert len(tables['vps']) == 2
+        assert len(tables['vps']) == 3
 
     def test_parses_two_details(self, sql_dump):
         tables = parse_sql_dump(str(sql_dump))
         assert len(tables['vps_details']) == 2
 
+    def test_parses_two_management(self, sql_dump):
+        tables = parse_sql_dump(str(sql_dump))
+        assert len(tables['vps_management']) == 2
+
     def test_parses_three_domains(self, sql_dump):
         tables = parse_sql_dump(str(sql_dump))
         assert len(tables['domains']) == 3
 
-    def test_server_row_fields_parsed_correctly(self, sql_dump):
-        """Парсер должен корректно разбивать строку на значения."""
+    def test_server_row_field_order(self, sql_dump):
+        """Строка раскладывается по настоящему порядку (12 колонок)."""
         tables = parse_sql_dump(str(sql_dump))
         first = tables['vps'][0]
-        # id-first, 15 колонок
-        assert first[0] == 1
-        assert first[1] == 'vps-alpha'
-        assert first[2] == 'pass-alpha'
-        assert first[3] == '192.0.2.11'
-        assert first[4] == 'Hetzner'
-        # exim/squid/vpn — числовые из дампа
-        assert first[7] == 1
-        assert first[8] == 0
-        assert first[9] == 0
+        assert first == [
+            1, 'vps-alpha', 'admin', 'pass-alpha', '192.0.2.11', 'Hetzner',
+            'hlogin', 'hpp', '1', '0', '0', 'Mail relay',
+        ]
+
+    def test_semicolon_inside_values_does_not_break_parsing(self, tmp_path):
+        """`;` внутри Password/Notes не обрывает statement, записи из двух
+        INSERT уцелели все (регрессия на дефект 1)."""
+        sql = (
+            "INSERT INTO `vps` VALUES "
+            "(1, 'alpha;one', 'root', 'p;ass;word', '1.1.1.1', 'prov', 'l', 'pp', '1', '0', '0', 'note; with semicolons'),\n"
+            "(2, 'beta', 'root', 'pass2', '2.2.2.2', 'prov2', 'l2', 'pp2', '0', '0', '0', 'second');\n"
+            "INSERT INTO `vps` VALUES "
+            "(3, 'gamma;', 'root', 'p3', '3.3.3.3', 'prov3', 'l3', 'pp3', '0', '0', '0', 'x');\n"
+        )
+        path = tmp_path / 'semi.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        assert len(tables['vps']) == 3
+        rows = {r[0]: r for r in tables['vps']}
+        # Пароль с ; сохранился целиком
+        assert rows[1][3] == 'p;ass;word'
+        assert rows[1][11] == 'note; with semicolons'
+        # Вторая INSERT не потеряна, имя с ; уцелело
+        assert rows[3][1] == 'gamma;'
 
     def test_handles_sql_with_quoted_strings_and_escapes(self, tmp_path):
-        """Парсер корректно обрабатывает экранированные апострофы."""
+        """Корректно обрабатываются экранированные апострофы (mysqldump, `\\'`)."""
         path = tmp_path / 'escapes.sql'
         path.write_text(
             "INSERT INTO `vps` VALUES "
-            "(1, 'name with \\'quote\\' inside', 'p', '1.1.1.1', "
-            "'prov', 'login', 'pp', 0, 0, 0, 'note', 1, NULL, NULL, NULL);",
+            "(1, 'name with \\'quote\\' inside', 'root', 'p', '1.1.1.1', "
+            "'prov', 'login', 'pp', '0', '0', '0', 'note');",
             encoding='utf-8',
         )
         tables = parse_sql_dump(str(path))
@@ -160,9 +192,8 @@ class TestImportLegacyDryRun:
         with app.app_context():
             result = import_legacy_data(tables, dry_run=True)
 
-        # Метод вернул счётчики планируемых записей
         servers, domains, skipped = result
-        assert servers == 2
+        assert servers == 3
         assert domains == 3
         assert skipped == 0
         # Но в БД пусто
@@ -185,14 +216,14 @@ class TestImportLegacyReal:
                 tables, dry_run=False, reset=True,
             )
 
-        assert servers == 2
+        assert servers == 3
         assert domains == 3
         assert skipped == 0
-        assert Server.query.count() == 2
+        assert Server.query.count() == 3
         assert Domain.query.count() == 3
 
     def test_imported_server_has_correct_fields(self, app, sql_dump):
-        """Проверяем основные поля + services toggles."""
+        """Основные поля + сервисные флаги (exim/squid/vpn — varchar)."""
         tables = parse_sql_dump(str(sql_dump))
         with app.app_context():
             import_legacy_data(tables, dry_run=False, reset=True)
@@ -202,27 +233,68 @@ class TestImportLegacyReal:
             assert srv1.name == 'vps-alpha'
             assert srv1.ip_address == '192.0.2.11'
             assert srv1.provider == 'Hetzner'
-            # exim=1 → True
+            assert srv1.ssh_username == 'admin'
+            assert srv1.active is True
+            # exim='1' → True, squid/vpn='0' → False
             assert srv1.has_exim is True
             assert srv1.has_squid is False
             assert srv1.has_vpn is False
-            assert srv1.active is True
 
             srv2 = db.session.get(Server, 2)
             assert srv2.has_squid is True
             assert srv2.has_vpn is True
             assert srv2.has_exim is False
 
-    def test_imported_server_has_vps_details(self, app, sql_dump):
-        """website/web_login/... подцепляются из vps_details по vps_id."""
+    def test_empty_login_defaults_to_root(self, app, sql_dump):
+        """Пустой Login → ssh_username='root' (поле NOT NULL, дефолт root)."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=False, reset=True)
+            srv2 = db.session.get(Server, 2)
+            assert srv2.ssh_username == 'root'
+
+    def test_panel_fields_from_management_and_hw_from_details(self, app, sql_dump):
+        """os/cpu/ram приходят из vps_details, а website/web_login/mgt_* из
+        vps_management. Тест падает, если таблицы поменять местами."""
         tables = parse_sql_dump(str(sql_dump))
         with app.app_context():
             import_legacy_data(tables, dry_run=False, reset=True)
 
             srv1 = db.session.get(Server, 1)
+            assert srv1.os == 'Ubuntu 22.04'
+            assert srv1.cpu == '2 vCPU'
+            assert srv1.ram == '4 GB'
             assert srv1.website == 'https://console.hetzner.com'
             assert srv1.web_login == 'hcloud'
+            assert srv1.web_pass == 'web-pass-1'
+            assert srv1.vps_management_url == 'https://mgmt.hetzner.com'
             assert srv1.mgt_login == 'admin'
+            assert srv1.mgt_pass == 'mgt-pass-1'
+
+    def test_drive_appended_to_notes(self, app, sql_dump):
+        """Непустой `drive` дописывается в notes строкой «Диск: …»; пустой —
+        notes не трогает."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=False, reset=True)
+
+            srv1 = db.session.get(Server, 1)
+            assert srv1.notes == 'Mail relay\nДиск: SSD 80 GB'
+
+            # srv2: drive='' → notes без изменений
+            srv2 = db.session.get(Server, 2)
+            assert srv2.notes == 'Squid+VPN'
+
+    def test_dash_name_marks_inactive(self, app, sql_dump):
+        """Имя с тире в начале → active=False, тире и пробелы срезаются."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=False, reset=True)
+
+            srv3 = db.session.get(Server, 3)
+            assert srv3 is not None
+            assert srv3.name == 'old.example.com'
+            assert srv3.active is False
 
     def test_imported_domains_link_to_servers(self, app, sql_dump):
         tables = parse_sql_dump(str(sql_dump))
@@ -234,20 +306,45 @@ class TestImportLegacyReal:
             assert srv1.domains.count() == 2
             assert srv2.domains.count() == 1
 
+    def test_domains_vpsid_as_string_binds_and_non_numeric_skipped(self, app, tmp_path):
+        """vpsid varchar: '7' привязывается к серверу 7, нечисловое значение
+        пропускается с подсчётом."""
+        sql = (
+            "CREATE TABLE `vps` (`id` int, `VPS` varchar(19), `Login` varchar(10), "
+            "`Password` varchar(20), `IP` varchar(16), `Provider` varchar(32), "
+            "`PLogin` varchar(60), `PPassword` varchar(60), `exim` varchar(4), "
+            "`squid` varchar(5), `vpn` varchar(3), `Notes` varchar(86));\n"
+            "INSERT INTO `vps` VALUES "
+            "(7, 'srv-7', 'root', 'p', '1.1.1.7', 'prov', 'l', 'pp', '0', '0', '0', 'n');\n"
+            "CREATE TABLE `domains` (`domain_id` integer, `domain` varchar(32), `vpsid` varchar(32));\n"
+            "INSERT INTO `domains` VALUES "
+            "(1, 'seven.example.com', '7'),\n"
+            "(2, 'bad.example.com', 'abc');\n"
+        )
+        path = tmp_path / 'dom.sql'
+        path.write_text(sql, encoding='utf-8')
+
+        tables = parse_sql_dump(str(path))
+        with app.app_context():
+            servers, domains, skipped = import_legacy_data(tables, dry_run=True)
+
+        assert servers == 1
+        assert domains == 1  # привязан только '7'; 'abc' пропущен
+
     @pytest.mark.parametrize('exim_raw,squid_raw,vpn_raw,expected_services', [
-        (1, 0, 0, ['exim']),
-        (0, 1, 1, ['squid', 'vpn']),
-        (1, 1, 1, ['exim', 'squid', 'vpn']),
-        (0, 0, 0, []),
+        ('1', '0', '0', ['exim']),
+        ('0', '1', '1', ['squid', 'vpn']),
+        ('1', '1', '1', ['exim', 'squid', 'vpn']),
+        ('0', '0', '0', []),
     ])
     def test_services_toggles_parsed_correctly(
         self, app, tmp_path, exim_raw, squid_raw, vpn_raw, expected_services,
     ):
-        """Сервисные флаги из legacy должны превращаться в bool правильно."""
+        """Сервисные флаги из legacy (varchar) должны превращаться в bool правильно."""
         sql = (
             "INSERT INTO `vps` VALUES "
-            f"(1, 'srv', 'pass', '1.1.1.1', 'prov', 'login', 'pp', "
-            f"{exim_raw}, {squid_raw}, {vpn_raw}, 'note', 1, NULL, NULL, NULL);"
+            f"(1, 'srv', 'root', 'pass', '1.1.1.1', 'prov', 'login', 'pp', "
+            f"{exim_raw}, {squid_raw}, {vpn_raw}, 'note');"
         )
         path = tmp_path / 'svc.sql'
         path.write_text(sql, encoding='utf-8')
@@ -272,7 +369,7 @@ class TestImportLegacyReal:
 
             # Старая запись удалена, новые добавлены
             assert db.session.get(Server, 500) is None
-            assert Server.query.count() == 2
+            assert Server.query.count() == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -344,8 +441,36 @@ class TestImportLegacyGroup:
             import_legacy_data(tables, dry_run=True)
 
         out = capsys.readouterr().out
-        # Предупреждение о короткой строке в выводе ЕСТЬ (негативная проверка
-        # «пароля нет» без этой проверки зеленела бы вакуумно).
-        assert 'vps row too short' in out
+        # Предупреждение о неверном числе колонок в выводе ЕСТЬ
+        assert 'vps row has 3 columns instead of 12' in out
         # Значение пароля в выводе ОТСУТСТВУЕТ.
         assert 'secret-pass' not in out
+
+
+# --------------------------------------------------------------------------- #
+# Отчёт --dry-run
+# --------------------------------------------------------------------------- #
+
+class TestDryRunReport:
+    """Итоговый отчёт: разбивка пропусков и счётчиков, без значений полей."""
+
+    def test_report_breakdown_counts(self, app, sql_dump, capsys):
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        assert 'vps: parsed 3, created 3, skipped 0 (wrong columns: 0, empty name: 0)' in out
+        assert 'inactive by dash: 1' in out
+        assert 'domains: bound 3, skipped by vpsid: 0' in out
+        assert 'notes with disk: 1' in out
+
+    def test_report_does_not_print_password_values(self, app, sql_dump, capsys):
+        """Отчёт и предупреждения не печатают значения полей (пароли)."""
+        tables = parse_sql_dump(str(sql_dump))
+        with app.app_context():
+            import_legacy_data(tables, dry_run=True)
+
+        out = capsys.readouterr().out
+        assert 'pass-alpha' not in out
+        assert 'pass-beta' not in out
