@@ -123,9 +123,6 @@
          Селектор по data-inline-edit, а не по классу: тогда правило работает и
          в строке, и в ячейке, которую HTMX перерисовывает после инлайн-правки. */
       table.tbl td [data-inline-edit="notes"] { white-space: normal; }
-      table.tbl td [data-inline-edit="password"],
-      table.tbl td [data-inline-edit="provider_password"] {
-        max-width: 11rem; white-space: normal; overflow-wrap: anywhere; }
       .cell-num  { font-family: ui-monospace, Menlo, Consolas, monospace;
                    font-variant-numeric: tabular-nums; color: var(--muted); }
 
