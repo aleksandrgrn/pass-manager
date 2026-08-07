@@ -26,9 +26,11 @@
         <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_password or '—' }}</div>
     </td>
     <td>
-        {% for d in server.domains %}
-        <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
-        {% endfor %}
+        <div class="cell-domains">
+            {% for d in server.domains %}
+            <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
+            {% endfor %}
+        </div>
     </td>
     <td class="text-center">
         <button hx-post="{{ url_for('servers.toggle_field', server_id=server.id) }}"
