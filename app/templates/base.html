@@ -135,20 +135,20 @@
          отдаётся вовсе (проверка в шаблонах по passwords_visible), пароль
          провайдера видят все, кто видит сервер, — но на экране закрыты оба.
          Два списка не сводить в один: сломается либо маска, либо права. */
-      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]) {
+      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask) {
         font-size: 0;
       }
-      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"])::before {
+      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask)::before {
         content: '••••••••'; font-size: 12px; letter-spacing: 2px; color: var(--muted);
       }
       /* Открыто: на 3 секунды после клика и на всё время правки. ::before у
          правимой ячейки гасим отдельно — он висит на самой ячейке, а редактор
          подставляет поле внутрь неё, и точки иначе остаются слева, отжимая
          поле вбок. */
-      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]):is(.revealed, [data-editing="1"]) {
+      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask):is(.revealed, [data-editing="1"]) {
         font-size: 12px;
       }
-      table.tbl td :is([data-inline-edit="password"], [data-inline-edit="provider_password"]):is(.revealed, [data-editing="1"])::before {
+      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask):is(.revealed, [data-editing="1"])::before {
         content: none;
       }
 
@@ -279,7 +279,7 @@
 
         let _cellClickTimer = null;
         document.addEventListener('click', (e) => {
-            const cell = e.target.closest('[data-inline-edit]');
+            const cell = e.target.closest('[data-inline-edit], .pw-mask');
             if (!cell || cell.dataset.editing === '1') return;
             if (_cellClickTimer) { clearTimeout(_cellClickTimer); _cellClickTimer = null; return; }
             const text = cell.textContent.trim();
