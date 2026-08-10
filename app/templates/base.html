@@ -134,21 +134,30 @@
          Маскируем шире, чем скрываем по правам: root-пароль не-суперадмину не
          отдаётся вовсе (проверка в шаблонах по passwords_visible), пароль
          провайдера видят все, кто видит сервер, — но на экране закрыты оба.
-         Два списка не сводить в один: сломается либо маска, либо права. */
-      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask) {
+         Два списка не сводить в один: сломается либо маска, либо права.
+         Класс вешается в шаблонах только там, где значение есть (см.
+         _row.html, _cell.html, detail.html); список маскируемых полей в CSS
+         больше не живёт — он переехал в шаблоны.
+         Класс в селекторе продублирован (стоит дважды подряд). Tailwind
+         подключён с CDN и дописывает свой <style> после нашего блока, поэтому
+         одиночный класс (специфичность 0-1-0) проиграл бы утилите text-xs —
+         той же специфичности, но позже по порядку. Повтор класса даёт 0-2-0
+         и перебивает любую одиночную утилиту независимо от порядка: не
+         «чистить» дубль. */
+      .pw-mask.pw-mask {
         font-size: 0;
       }
-      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask)::before {
+      .pw-mask.pw-mask::before {
         content: '••••••••'; font-size: 12px; letter-spacing: 2px; color: var(--muted);
       }
       /* Открыто: на 3 секунды после клика и на всё время правки. ::before у
          правимой ячейки гасим отдельно — он висит на самой ячейке, а редактор
          подставляет поле внутрь неё, и точки иначе остаются слева, отжимая
          поле вбок. */
-      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask):is(.revealed, [data-editing="1"]) {
+      .pw-mask.pw-mask:is(.revealed, [data-editing="1"]) {
         font-size: 12px;
       }
-      :is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask):is(.revealed, [data-editing="1"])::before {
+      .pw-mask.pw-mask:is(.revealed, [data-editing="1"])::before {
         content: none;
       }
 

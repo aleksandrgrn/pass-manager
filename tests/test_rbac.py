@@ -327,7 +327,14 @@ class TestPasswordMask:
 
     # FIX-MASK-1: префикс table.tbl td перенесён внутрь :is(...), чтобы четвёртым
     # пунктом туда мог встать .pw-mask (карточка и форма не в таблице).
-    MASK = ':is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask)'
+    # FIX-MASK-3: маска переехала с data-inline-edit на класс, список маскируемых
+    # полей теперь живёт в шаблонах (_row.html, _cell.html, detail.html), а тут
+    # осталось одно правило на все четыре места. Класс в селекторе продублирован:
+    # одиночный дал бы 0-1-0 и проиграл бы утилите .text-xs из Tailwind CDN,
+    # который дописывает свой <style> после нашего блока (наш — седьмой элемент
+    # head, тейлвиндовский — тринадцатый). Дубль даёт 0-2-0 и бьёт любую
+    # одиночную утилиту независимо от порядка.
+    MASK = '.pw-mask.pw-mask'
 
     def test_mask_covers_both_password_columns(self, superadmin_client, sample_server):
         body = superadmin_client.get('/servers/').get_data(as_text=True)
@@ -350,6 +357,99 @@ class TestPasswordMask:
         значение из разметки, и оно обязано там остаться."""
         body = superadmin_client.get('/servers/').get_data(as_text=True)
         assert 's3cret-root-pass' in body
+
+    def test_filled_list_cells_carry_mask(self, superadmin_client, sample_server):
+        """FIX-MASK-3: заполненный сервер — обе парольные ячейки несут pw-mask.
+
+        Проверяем именно полную строку class, а не голую подстроку 'pw-mask':
+        она живёт и в CSS base.html (селектор шторки) и в JS-обработчике клика.
+        """
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert 'class="cursor-text font-mono text-xs pw-mask"' in body, \
+            'root-ячейка списка не под шторкой'
+        assert 'class="cursor-text pw-mask"' in body, \
+            'ячейка пароля провайдера не под шторкой'
+
+    def test_empty_list_cells_show_dash_without_mask(self, superadmin_client, db):
+        """FIX-MASK-3: сервер без паролей не должен выглядеть заполненным.
+
+        Ни одна парольная ячейка не несёт pw-mask, в ячейках прочерк, а
+        data-inline-edit и data-server-id остаются на месте — на них держатся
+        редактор и копирование по клику.
+        """
+        from app.models import Server
+        bare = Server(name='bare-list-server')
+        db.session.add(bare)
+        db.session.commit()
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        root_cell = (
+            f'data-inline-edit="password" data-server-id="{bare.id}" '
+            'class="cursor-text font-mono text-xs">'
+        )
+        assert root_cell in body, 'root-ячейка потеряла data-inline-edit'
+        assert f'{root_cell}\n            —' in body, \
+            'root-ячейка без пароля показывает не прочерк'
+        provider_cell = (
+            f'data-inline-edit="provider_password" data-server-id="{bare.id}" '
+            'class="cursor-text">'
+        )
+        assert provider_cell in body, 'ячейка провайдера потеряла data-inline-edit'
+        assert f'{provider_cell}—</div>' in body, \
+            'ячейка провайдера без пароля показывает не прочерк'
+
+    def test_duplicated_class_guard(self, superadmin_client, sample_server):
+        """Дубль класса охраняется явно.
+
+        Одиночный класс (0-1-0) проиграл бы .text-xs из Tailwind CDN, который
+        дописывает свой <style> после нашего блока. Строковая проверка
+        специфичность не доказывает, но ловит «уборку» дубля при следующей
+        правке вёрстки — она проскочила бы мимо всех остальных тестов.
+        """
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert '.pw-mask.pw-mask' in body, 'дубль класса убран из селектора шторки'
+
+
+# --------------------------------------------------------------------------- #
+# Шторка после инлайн-правки (FIX-MASK-3)
+# --------------------------------------------------------------------------- #
+
+class TestListMaskAfterInlineEdit:
+    """POST /servers/<id>/field возвращает _cell.html — он обязан сам вешать
+    pw-mask, иначе маска слетит после каждой правки пароля до перезагрузки."""
+
+    URL = '/servers/{id}/field'
+
+    @pytest.mark.parametrize('field,value', [
+        ('password', 'new-pass-456'),
+        ('provider_password', 'prov-new-789'),
+    ])
+    def test_nonempty_password_edit_returns_masked_cell(
+        self, superadmin_client, sample_server, field, value,
+    ):
+        resp = superadmin_client.post(
+            self.URL.format(id=sample_server.id),
+            data={'field': field, 'value': value},
+        )
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        prefix = 'cursor-text font-mono text-xs' if field == 'password' else 'cursor-text'
+        assert f'class="{prefix} pw-mask"' in body, \
+            f'ячейка {field} после правки вернулась без шторки'
+        assert value in body
+
+    def test_empty_password_edit_returns_dash_without_mask(
+        self, superadmin_client, sample_server,
+    ):
+        """Правка, стирающая пароль, обязана вернуть прочерк, а не точки:
+        у пустой ячейки нет значения, прятать нечего."""
+        resp = superadmin_client.post(
+            self.URL.format(id=sample_server.id),
+            data={'field': 'password', 'value': ''},
+        )
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert 'class="cursor-text font-mono text-xs pw-mask"' not in body
+        assert '—' in body
 
 
 # --------------------------------------------------------------------------- #
