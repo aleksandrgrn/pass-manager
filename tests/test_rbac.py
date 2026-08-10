@@ -361,13 +361,22 @@ class TestCardMask:
 
     DETAIL_URL = '/servers/{id}'
 
-    def test_four_passwords_masked_on_detail(self, superadmin_client, sample_server):
+    def test_four_passwords_masked_on_detail(self, superadmin_client, sample_server, db):
         """Все четыре поля карточки под шторкой, каждое отдельно.
 
         Считаем именно вложенный класс у значений, а не однократное
         присутствие на странице: `.pw-mask` есть и в CSS карточки, и у всех
         четырёх <dd>, так что одиночный поиск ничего бы не поймал.
+
+        FIX-MASK-2: шторка стала условной, поэтому сервер должен иметь пароли
+        во всех четырёх полях. У образца из фикстуры заполнены только
+        password и provider_password, а mgt_pass/web_pass пусты — без правки
+        ниже они показали бы прочерк без точек, и граница «есть значение →
+        точки» проверялась бы только на двух полях.
         """
+        sample_server.web_pass = 'web-pass-1'
+        sample_server.mgt_pass = 'mgt-pass-1'
+        db.session.commit()
         body = superadmin_client.get(
             self.DETAIL_URL.format(id=sample_server.id)
         ).get_data(as_text=True)
@@ -379,6 +388,39 @@ class TestCardMask:
         body = admin_client.get(self.DETAIL_URL.format(id=sample_server.id)).get_data(as_text=True)
         assert 'prov-pass-123' in body
         assert 's3cret-root-pass' not in body
+
+    def test_empty_server_shows_dash_not_masks(self, superadmin_client, db):
+        """FIX-MASK-2: сервер без паролей не должен выглядеть заполненным.
+
+        Точки рисуются только там, где есть что прятать: у пустых полей нет
+        класса pw-mask, и они показывают прочерк, как все остальные пустые
+        поля карточки. Проверяем именно строку класса у <dd>, а не голую
+        подстроку 'pw-mask': она живёт и в инлайн-CSS base.html (селектор
+        шторки), так что буквальный поиск был бы красным всегда.
+        """
+        from app.models import Server
+        bare = Server(name='bare-empty-server')
+        db.session.add(bare)
+        db.session.commit()
+        body = superadmin_client.get(
+            self.DETAIL_URL.format(id=bare.id)
+        ).get_data(as_text=True)
+        assert 'class="inline font-mono pw-mask"' not in body
+        assert '—' in body
+
+    def test_click_selector_guard(self, superadmin_client, sample_server):
+        """Охрана селектора клика на карточке.
+
+        Раскрытие по клику ловит поле через closest('[data-inline-edit],
+        .pw-mask') — второй вариант нужен карточке, где у <dd> нет
+        data-inline-edit, только класс. Удаление , .pw-mask из обработчика
+        не роняет ни одного теста, но карточка при этом закрывается
+        навсегда — эту строку держим в разметке явно.
+        """
+        body = superadmin_client.get(
+            self.DETAIL_URL.format(id=sample_server.id)
+        ).get_data(as_text=True)
+        assert "closest('[data-inline-edit], .pw-mask')" in body
 
 
 class TestEditFormMask:
