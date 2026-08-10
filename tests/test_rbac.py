@@ -325,11 +325,17 @@ class TestPasswordMask:
     колонок останется открытой.
     """
 
-    MASK = ':is([data-inline-edit="password"], [data-inline-edit="provider_password"])'
+    # FIX-MASK-1: префикс table.tbl td перенесён внутрь :is(...), чтобы четвёртым
+    # пунктом туда мог встать .pw-mask (карточка и форма не в таблице).
+    MASK = ':is(table.tbl td [data-inline-edit="password"], table.tbl td [data-inline-edit="provider_password"], .pw-mask)'
 
     def test_mask_covers_both_password_columns(self, superadmin_client, sample_server):
         body = superadmin_client.get('/servers/').get_data(as_text=True)
         assert self.MASK in body, 'селектор шторки пропал из base.html'
+        # Селектор с .pw-mask обязан стоять во всех четырёх правилах шторки:
+        # выпавшее из одного правила поле останется открытым (например, если
+        # .pw-mask убрать только из font-size:0, текст в карточке не схлопнется).
+        assert body.count(self.MASK) == 4, 'шторка маскирует не все списки полей'
         assert 'font-size: 0;' in body, 'шторка не схлопывает настоящий текст'
         assert "content: '••••••••'" in body, 'точки не рисуются'
 
@@ -344,3 +350,89 @@ class TestPasswordMask:
         значение из разметки, и оно обязано там остаться."""
         body = superadmin_client.get('/servers/').get_data(as_text=True)
         assert 's3cret-root-pass' in body
+
+
+# --------------------------------------------------------------------------- #
+# Шторка на паролях в карточке и в форме правки (FIX-MASK-1)
+# --------------------------------------------------------------------------- #
+
+class TestCardMask:
+    """Карточка /servers/<id>: пароли закрыты шторкой, но остаются в разметке."""
+
+    DETAIL_URL = '/servers/{id}'
+
+    def test_four_passwords_masked_on_detail(self, superadmin_client, sample_server):
+        """Все четыре поля карточки под шторкой, каждое отдельно.
+
+        Считаем именно вложенный класс у значений, а не однократное
+        присутствие на странице: `.pw-mask` есть и в CSS карточки, и у всех
+        четырёх <dd>, так что одиночный поиск ничего бы не поймал.
+        """
+        body = superadmin_client.get(
+            self.DETAIL_URL.format(id=sample_server.id)
+        ).get_data(as_text=True)
+        assert body.count('class="inline font-mono pw-mask"') == 4
+
+    def test_root_password_not_leaked_to_admin_on_detail(self, admin_client, sample_server):
+        """Шторка и права — разные вещи: админ видит пароль провайдера, но
+        root-пароль в страницу не попадает вовсе (см. TestOnlyRootPasswordIsSecret)."""
+        body = admin_client.get(self.DETAIL_URL.format(id=sample_server.id)).get_data(as_text=True)
+        assert 'prov-pass-123' in body
+        assert 's3cret-root-pass' not in body
+
+
+class TestEditFormMask:
+    """Форма правки: все password-поля закрыты type="password".
+
+    Нельзя переключать StringField на PasswordField в forms.py: она не отдаёт
+    значение при перерисовке, и submit затрёт пароли пустотой. Ниже это
+    зафиксировано и как наличие type="password", и как round-trip без потерь.
+    """
+
+    URL = '/servers/{id}/edit'
+
+    def test_edit_fields_have_password_type(self, superadmin_client, sample_server):
+        """На странице правки суперадмин видит четыре password-инпута
+        (bootstrap_password тут не рендерится — show_onboarding=False)."""
+        body = superadmin_client.get(
+            self.URL.format(id=sample_server.id)
+        ).get_data(as_text=True)
+        for field in ('password', 'provider_password', 'web_pass', 'mgt_pass'):
+            assert f'name="{field}" type="password"' in body, \
+                f'{field} не закрыт шторкой в форме правки'
+
+    def test_bootstrap_password_has_password_type_on_create(self, superadmin_client):
+        """Пятое поле (bootstrap) живёт на странице создания, где show_onboarding=True."""
+        body = superadmin_client.get('/servers/new').get_data(as_text=True)
+        assert 'name="bootstrap_password" type="password"' in body
+
+    def test_edit_roundtrips_passwords_without_clearing(self, superadmin_client, sample_server, db):
+        """Главный тест: submit формы теми же значениями не трёт пароли.
+
+        Сначала убеждаемся, что форма несёт расшифрованные значения в разметке
+        (StringField отдаёт их в value, PasswordField отдал бы пустоту), затем
+        повторяем submit ими же и сверяем с БД.
+        """
+        url = self.URL.format(id=sample_server.id)
+        render = superadmin_client.get(url).get_data(as_text=True)
+        assert 'value="s3cret-root-pass"' in render, \
+            'форма не возвращает password в разметку (похоже на PasswordField)'
+        assert 'value="prov-pass-123"' in render, \
+            'форма не возвращает provider_password в разметку'
+
+        resp = superadmin_client.post(url, data={
+            'name': sample_server.name,
+            'group_id': sample_server.group_id,
+            'ip_address': sample_server.ip_address,
+            'provider': sample_server.provider,
+            'provider_login': sample_server.provider_login,
+            'os': sample_server.os,
+            'ssh_username': 'root',
+            'ssh_port': '22',
+            'password': 's3cret-root-pass',
+            'provider_password': 'prov-pass-123',
+        })
+        assert resp.status_code == 302
+        db.session.refresh(sample_server)
+        assert sample_server.password == 's3cret-root-pass'
+        assert sample_server.provider_password == 'prov-pass-123'
