@@ -1,10 +1,12 @@
 {# Re-render a single cell after inline edit. Used by edit_field() view. #}
 {# Expects: server, field, value, passwords_visible #}
 {% set is_password_field = field == 'password' %}
+{# Маска — шире, чем права: provider_password маскируется, хотя правит его не только суперадмин. #}
+{% set is_masked = field in ('password', 'provider_password') %}
 {% set editable = not is_password_field or passwords_visible %}
 {% if editable %}
 <div data-inline-edit="{{ field }}" data-server-id="{{ server.id }}"
-     class="cursor-text {% if is_password_field %}font-mono text-xs{% endif %}"
+     class="cursor-text{% if is_password_field %} font-mono text-xs{% endif %}{% if is_masked and value %} pw-mask{% endif %}"
      title="Двойной клик для редактирования">
     {{ value or '—' }}
 </div>

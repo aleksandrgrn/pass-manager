@@ -8,7 +8,7 @@
     </td>
     {% if passwords_visible %}
     <td>
-        <div data-inline-edit="password" data-server-id="{{ server.id }}" class="cursor-text font-mono text-xs">
+        <div data-inline-edit="password" data-server-id="{{ server.id }}" class="cursor-text font-mono text-xs{{ ' pw-mask' if server.password else '' }}">
             {{ server.password or '—' }}
         </div>
     </td>
@@ -23,7 +23,7 @@
         <div data-inline-edit="provider_login" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_login or '—' }}</div>
     </td>
     <td class="cell-mono">
-        <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_password or '—' }}</div>
+        <div data-inline-edit="provider_password" data-server-id="{{ server.id }}" class="cursor-text{{ ' pw-mask' if server.provider_password else '' }}">{{ server.provider_password or '—' }}</div>
     </td>
     <td>
         <div class="cell-domains">
