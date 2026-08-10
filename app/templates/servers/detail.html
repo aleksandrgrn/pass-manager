@@ -47,9 +47,9 @@
                 <div><dt class="text-muted inline">IP: </dt><dd class="inline font-mono">{{ server.ip_address or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Провайдер: </dt><dd class="inline">{{ server.provider or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Логин провайдера: </dt><dd class="inline">{{ server.provider_login or '—' }}</dd></div>
-                <div><dt class="text-muted inline">Пароль провайдера: </dt><dd class="inline font-mono pw-mask">{{ server.provider_password or '—' }}</dd></div>
+                <div><dt class="text-muted inline">Пароль провайдера: </dt><dd class="inline font-mono{{ ' pw-mask' if server.provider_password else '' }}">{{ server.provider_password or '—' }}</dd></div>
                 {% if passwords_visible %}
-                <div><dt class="text-muted inline">Пароль root: </dt><dd class="inline font-mono pw-mask">{{ server.password or '—' }}</dd></div>
+                <div><dt class="text-muted inline">Пароль root: </dt><dd class="inline font-mono{{ ' pw-mask' if server.password else '' }}">{{ server.password or '—' }}</dd></div>
                 {% else %}
                 <p class="text-xs text-faint mt-2">Пароль root скрыт (роль {{ current_user.role }}).</p>
                 {% endif %}
@@ -74,10 +74,10 @@
             <dl class="text-sm space-y-1">
                 <div><dt class="text-muted inline">URL: </dt><dd class="inline">{{ server.vps_management_url or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Логин: </dt><dd class="inline">{{ server.mgt_login or '—' }}</dd></div>
-                <div><dt class="text-muted inline">Пароль: </dt><dd class="inline font-mono pw-mask">{{ server.mgt_pass or '—' }}</dd></div>
+                <div><dt class="text-muted inline">Пароль: </dt><dd class="inline font-mono{{ ' pw-mask' if server.mgt_pass else '' }}">{{ server.mgt_pass or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Website: </dt><dd class="inline">{{ server.website or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Web login: </dt><dd class="inline">{{ server.web_login or '—' }}</dd></div>
-                <div><dt class="text-muted inline">Web pass: </dt><dd class="inline font-mono pw-mask">{{ server.web_pass or '—' }}</dd></div>
+                <div><dt class="text-muted inline">Web pass: </dt><dd class="inline font-mono{{ ' pw-mask' if server.web_pass else '' }}">{{ server.web_pass or '—' }}</dd></div>
             </dl>
         </div>
 
