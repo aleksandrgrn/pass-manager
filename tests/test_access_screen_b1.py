@@ -31,8 +31,13 @@ def other_group(db):
 class TestSuperadminOnly:
     """Забыть role_required хоть на одном маршруте — дыра. Проверяем все."""
 
-    def test_admin_forbidden_on_index(self, admin_client):
-        assert admin_client.get('/access/').status_code == 403
+    def test_admin_can_open_index_since_c2(self, admin_client):
+        """C2 открыл экран всем: правило B1 «только суперадмин» здесь отменено.
+
+        Суперадминскими остаются маршруты изменений — см. соседние тесты этого
+        класса, они по-прежнему требуют 403.
+        """
+        assert admin_client.get('/access/').status_code == 200
 
     def test_admin_forbidden_on_create_group(self, admin_client):
         resp = admin_client.post('/access/groups', data={'name': 'sneaky'})
@@ -66,9 +71,10 @@ class TestSuperadminOnly:
 
 
 class TestMenuVisibility:
-    def test_admin_does_not_see_access_menu_item(self, admin_client):
+    def test_admin_sees_access_menu_item_since_c2(self, admin_client):
+        """C2: ссылка «Доступ» в шапке видна всем — там живёт личный ключ."""
         body = admin_client.get('/servers/').get_data(as_text=True)
-        assert '/access/' not in body
+        assert '/access/' in body
 
     def test_superadmin_sees_access_menu_item(self, superadmin_client):
         body = superadmin_client.get('/servers/').get_data(as_text=True)
