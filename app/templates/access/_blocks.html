@@ -120,6 +120,7 @@
                         <th>ФИО</th>
                         <th>Группы</th>
                         <th class="text-center">Доступов</th>
+                        <th>Ключ</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -141,10 +142,26 @@
                             {% endfor %}
                         </td>
                         <td class="cell-num text-center">{{ active_grants_by_user.get(user.id, 0) }}</td>
+                        <td>
+                            {% if user.vps_manager_key_id %}
+                            <span class="cell-mono">#{{ user.vps_manager_key_id }}</span>
+                            {% if user.key_downloaded_at %}
+                            <span class="text-faint text-xs">скачан {{ user.key_downloaded_at.strftime('%d.%m.%Y') }}</span>
+                            <button hx-post="{{ url_for('access.reset_key_download', user_id=user.id) }}"
+                                    hx-target="#access-content" hx-swap="innerHTML"
+                                    hx-confirm="Разрешить {{ user.username }} скачать ключ ещё раз? Это тот же самый ключ: уже скачанная копия продолжит работать."
+                                    class="pill off">сбросить</button>
+                            {% else %}
+                            <span class="text-faint text-xs">не скачан</span>
+                            {% endif %}
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="4" class="text-center text-faint" style="padding: 24px 12px;">Нет записей</td>
+                        <td colspan="5" class="text-center text-faint" style="padding: 24px 12px;">Нет записей</td>
                     </tr>
                     {% endfor %}
                 </tbody>

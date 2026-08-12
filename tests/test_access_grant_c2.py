@@ -1,4 +1,5 @@
 """FIX-C2-2b: self-grant access to a server using a personal key."""
+from datetime import datetime
 from unittest.mock import patch
 
 from app.models import AccessAssignment, Server, ServerGroup
@@ -224,3 +225,67 @@ def test_key_download_requires_login(app, client):
 
     assert response.status_code == 302
     assert '/auth/login' in response.headers['Location']
+
+
+def test_superadmin_can_reset_key_download_flag(
+    app, db, admin_user, superadmin_client,
+):
+    admin_user.vps_manager_key_id = 7
+    admin_user.key_downloaded_at = datetime.utcnow()
+    db.session.commit()
+
+    response = superadmin_client.post(f'/access/users/{admin_user.id}/key/reset')
+
+    assert response.status_code == 200
+    assert 'Группы' in response.get_data(as_text=True)
+    assert admin_user.key_downloaded_at is None
+
+
+def test_admin_cannot_reset_key_download_flag(
+    app, db, admin_user, admin_client,
+):
+    admin_user.vps_manager_key_id = 7
+    admin_user.key_downloaded_at = datetime.utcnow()
+    db.session.commit()
+
+    response = admin_client.post(f'/access/users/{admin_user.id}/key/reset')
+
+    assert response.status_code == 403
+    assert admin_user.key_downloaded_at is not None
+
+
+def test_key_download_works_again_after_reset(
+    app, db, admin_user, admin_client, superadmin_client,
+):
+    admin_user.vps_manager_key_id = 7
+    admin_user.key_downloaded_at = datetime.utcnow()
+    db.session.commit()
+
+    reset_response = superadmin_client.post(f'/access/users/{admin_user.id}/key/reset')
+    assert reset_response.status_code == 200
+
+    with patch(
+        'app.access.views.vps_client.get_private_key',
+        return_value={'success': True, 'private_key': 'PEMDATA'},
+    ):
+        response = admin_client.post('/access/key/download')
+
+    assert response.status_code == 200
+    assert b'PEMDATA' in response.data
+
+
+def test_reset_button_is_visible_only_when_download_was_used(
+    app, db, admin_user, superadmin_client,
+):
+    admin_user.vps_manager_key_id = 7
+    admin_user.key_downloaded_at = datetime.utcnow()
+    db.session.commit()
+
+    downloaded = superadmin_client.get('/access/')
+
+    admin_user.key_downloaded_at = None
+    db.session.commit()
+    not_downloaded = superadmin_client.get('/access/')
+
+    assert f'/access/users/{admin_user.id}/key/reset' in downloaded.get_data(as_text=True)
+    assert f'/access/users/{admin_user.id}/key/reset' not in not_downloaded.get_data(as_text=True)
