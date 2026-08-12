@@ -6,13 +6,16 @@ HTMX-подмены, а не редирект — состояние блоко�
 взаимозависимо (например, вывод из группы возвращает человека в «Без группы»),
 поэтому после любой мутации проще и надёжнее перерисовать все три блока целиком.
 """
-from flask import Blueprint, render_template, request, abort
+from datetime import datetime
+
+from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import ServerGroup, ServerGroupMembership, User, AccessAssignment
 from app.auth.decorators import role_required
+from app.services import vps_client
 
 access_bp = Blueprint('access', __name__)
 
@@ -60,9 +63,11 @@ def _render_blocks(error=None):
 
 @access_bp.route('/')
 @login_required
-@role_required('superadmin')
 def index():
-    return render_template('access/index.html', **_blocks_context())
+    # Блоки групп и людей — суперадминские; обычному сотруднику собирать их
+    # незачем, он увидит только свой личный блок.
+    context = _blocks_context() if current_user.is_superadmin else {}
+    return render_template('access/index.html', **context)
 
 
 @access_bp.route('/groups', methods=['POST'])
@@ -146,3 +151,41 @@ def remove_membership(user_id, group_id):
     db.session.delete(membership)
     db.session.commit()
     return _render_blocks()
+
+
+@access_bp.route('/key/download', methods=['POST'])
+@login_required
+def download_key():
+    """C2: отдать приватную половину личного ключа. Ровно один раз."""
+    if current_user.vps_manager_key_id is None:
+        flash('Личного ключа ещё нет — он создаётся при первой выдаче доступа.', 'error')
+        return redirect(url_for('access.index'))
+
+    if current_user.key_downloaded_at is not None:
+        # Одноразовость — сигнализация, а не защита: кто украл учётные данные и
+        # скачал первым, ключ уже получил. Ценность в том, что законный владелец
+        # увидит отказ и придёт к суперадмину, то есть кража станет заметной.
+        current_app.logger.warning(
+            'Повторная попытка скачать личный ключ: пользователь %s, ключ %s',
+            current_user.username, current_user.vps_manager_key_id,
+        )
+        flash('Ключ уже скачивали. Повторная выдача — через суперадмина.', 'error')
+        return redirect(url_for('access.index'))
+
+    resp = vps_client.get_private_key(current_user.vps_manager_key_id)
+    if not resp.get('success'):
+        flash(f'Не удалось получить ключ: {resp.get("message")}', 'error')
+        return redirect(url_for('access.index'))
+
+    # Флаг ставится только после успешного ответа: иначе сбой на той стороне
+    # сжигал бы единственную попытку человека.
+    current_user.key_downloaded_at = datetime.utcnow()
+    db.session.commit()
+
+    return Response(
+        resp['private_key'],
+        mimetype='application/x-pem-file',
+        headers={
+            'Content-Disposition': f'attachment; filename=id_rsa_{current_user.username}',
+        },
+    )
