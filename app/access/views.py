@@ -6,6 +6,8 @@ HTMX-подмены, а не редирект — состояние блоко�
 взаимозависимо (например, вывод из группы возвращает человека в «Без группы»),
 поэтому после любой мутации проще и надёжнее перерисовать все три блока целиком.
 """
+import io
+import zipfile
 from datetime import datetime
 
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
@@ -177,16 +179,29 @@ def download_key():
         flash(f'Не удалось получить ключ: {resp.get("message")}', 'error')
         return redirect(url_for('access.index'))
 
+    # Оба формата берутся до того, как тратится попытка: архив отдаётся либо
+    # полным, либо никаким. Отдать половину — значит сжечь единственную
+    # попытку человека и оставить его без рабочего формата.
+    resp_ppk = vps_client.get_private_key_ppk(current_user.vps_manager_key_id)
+    if not resp_ppk.get('success'):
+        flash(f'Не удалось получить ключ для PuTTY: {resp_ppk.get("message")}', 'error')
+        return redirect(url_for('access.index'))
+
     # Флаг ставится только после успешного ответа: иначе сбой на той стороне
     # сжигал бы единственную попытку человека.
     current_user.key_downloaded_at = datetime.utcnow()
     db.session.commit()
 
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('id_rsa', resp['private_key'])
+        archive.writestr('id_rsa.ppk', resp_ppk['private_key_ppk'])
+
     return Response(
-        resp['private_key'],
-        mimetype='application/x-pem-file',
+        buffer.getvalue(),
+        mimetype='application/zip',
         headers={
-            'Content-Disposition': f'attachment; filename=id_rsa_{current_user.username}',
+            'Content-Disposition': f'attachment; filename=id_rsa_{current_user.username}.zip',
         },
     )
 

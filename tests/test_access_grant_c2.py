@@ -1,4 +1,6 @@
 """FIX-C2-2b: self-grant access to a server using a personal key."""
+import io
+import zipfile
 from datetime import datetime
 from unittest.mock import patch
 
@@ -144,14 +146,21 @@ def test_admin_can_download_personal_key_once(app, db, admin_client, admin_user)
     with patch(
         'app.access.views.vps_client.get_private_key',
         return_value={'success': True, 'private_key': 'PEMDATA'},
-    ) as get_private_key:
+    ) as get_private_key, patch(
+        'app.access.views.vps_client.get_private_key_ppk',
+        return_value={'success': True, 'private_key_ppk': 'PPKDATA'},
+    ) as get_private_key_ppk:
         response = admin_client.post('/access/key/download')
 
     assert response.status_code == 200
-    assert b'PEMDATA' in response.data
+    archive = zipfile.ZipFile(io.BytesIO(response.data))
+    assert sorted(archive.namelist()) == ['id_rsa', 'id_rsa.ppk']
+    assert archive.read('id_rsa') == b'PEMDATA'
+    assert archive.read('id_rsa.ppk') == b'PPKDATA'
     assert 'attachment' in response.headers['Content-Disposition']
     assert admin_user.key_downloaded_at is not None
     get_private_key.assert_called_once_with(7)
+    get_private_key_ppk.assert_called_once_with(7)
 
 
 def test_second_key_download_is_rejected_without_client_call(
@@ -163,7 +172,10 @@ def test_second_key_download_is_rejected_without_client_call(
     with patch(
         'app.access.views.vps_client.get_private_key',
         return_value={'success': True, 'private_key': 'PEMDATA'},
-    ) as get_private_key:
+    ) as get_private_key, patch(
+        'app.access.views.vps_client.get_private_key_ppk',
+        return_value={'success': True, 'private_key_ppk': 'PPKDATA'},
+    ):
         first = admin_client.post('/access/key/download')
         second = admin_client.post('/access/key/download')
 
@@ -181,12 +193,16 @@ def test_key_download_failure_does_not_consume_attempt(
     with patch(
         'app.access.views.vps_client.get_private_key',
         return_value={'success': False, 'message': 'down'},
-    ) as get_private_key:
+    ) as get_private_key, patch(
+        'app.access.views.vps_client.get_private_key_ppk',
+        return_value={'success': True, 'private_key_ppk': 'PPKDATA'},
+    ) as get_private_key_ppk:
         response = admin_client.post('/access/key/download')
 
     assert response.status_code == 302
     assert admin_user.key_downloaded_at is None
     get_private_key.assert_called_once_with(7)
+    get_private_key_ppk.assert_not_called()
 
 
 def test_missing_key_does_not_call_vps_manager(app, db, admin_client, admin_user):
@@ -267,11 +283,17 @@ def test_key_download_works_again_after_reset(
     with patch(
         'app.access.views.vps_client.get_private_key',
         return_value={'success': True, 'private_key': 'PEMDATA'},
+    ), patch(
+        'app.access.views.vps_client.get_private_key_ppk',
+        return_value={'success': True, 'private_key_ppk': 'PPKDATA'},
     ):
         response = admin_client.post('/access/key/download')
 
     assert response.status_code == 200
-    assert b'PEMDATA' in response.data
+    archive = zipfile.ZipFile(io.BytesIO(response.data))
+    assert sorted(archive.namelist()) == ['id_rsa', 'id_rsa.ppk']
+    assert archive.read('id_rsa') == b'PEMDATA'
+    assert archive.read('id_rsa.ppk') == b'PPKDATA'
 
 
 def test_reset_button_is_visible_only_when_download_was_used(
@@ -289,3 +311,33 @@ def test_reset_button_is_visible_only_when_download_was_used(
 
     assert f'/access/users/{admin_user.id}/key/reset' in downloaded.get_data(as_text=True)
     assert f'/access/users/{admin_user.id}/key/reset' not in not_downloaded.get_data(as_text=True)
+
+
+def test_key_download_ppk_failure_does_not_consume_attempt(
+    app, db, admin_client, admin_user,
+):
+    admin_user.vps_manager_key_id = 7
+    db.session.commit()
+
+    with patch(
+        'app.access.views.vps_client.get_private_key',
+        return_value={'success': True, 'private_key': 'PEMDATA'},
+    ), patch(
+        'app.access.views.vps_client.get_private_key_ppk',
+        return_value={'success': False, 'message': 'puttygen'},
+    ):
+        response = admin_client.post('/access/key/download')
+
+    assert response.status_code == 302
+    assert admin_user.key_downloaded_at is None
+
+
+def test_key_archive_contents_are_described(app, db, admin_client, admin_user):
+    admin_user.vps_manager_key_id = 7
+    admin_user.key_downloaded_at = None
+    db.session.commit()
+
+    response = admin_client.get('/access/')
+
+    assert response.status_code == 200
+    assert 'id_rsa.ppk для PuTTY' in response.get_data(as_text=True)
