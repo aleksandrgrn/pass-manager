@@ -189,3 +189,20 @@ def download_key():
             'Content-Disposition': f'attachment; filename=id_rsa_{current_user.username}',
         },
     )
+
+
+@access_bp.route('/users/<int:user_id>/key/reset', methods=['POST'])
+@login_required
+@role_required('superadmin')
+def reset_key_download(user_id):
+    """C2: вернуть человеку право скачать личный ключ ещё раз."""
+    user = User.query.get_or_404(user_id)
+    # Журнал — единственный след операции: она снимает ту самую одноразовость,
+    # ради которой флаг и заводился.
+    current_app.logger.warning(
+        'Сброс флага скачивания ключа: суперадмин %s → пользователь %s, ключ %s',
+        current_user.username, user.username, user.vps_manager_key_id,
+    )
+    user.key_downloaded_at = None
+    db.session.commit()
+    return _render_blocks()
