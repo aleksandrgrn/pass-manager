@@ -56,6 +56,16 @@
                 <div><dt class="text-muted inline">ОС: </dt><dd class="inline">{{ server.os or '—' }}</dd></div>
                 <div><dt class="text-muted inline">CPU: </dt><dd class="inline">{{ server.cpu or '—' }}</dd></div>
                 <div><dt class="text-muted inline">RAM: </dt><dd class="inline">{{ server.ram or '—' }}</dd></div>
+                <div class="pt-1"><dt class="text-muted inline">VPS Manager: </dt>
+                    <dd class="inline">
+                        {% if server.vps_manager_server_id %}
+                        <span class="pill on">подключён</span>
+                        <span class="text-xs text-faint font-mono">#{{ server.vps_manager_server_id }}</span>
+                        {% else %}
+                        <span class="pill off">не подключён</span>
+                        {% endif %}
+                    </dd>
+                </div>
             </dl>
         </div>
 

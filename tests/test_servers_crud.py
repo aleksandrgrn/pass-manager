@@ -97,6 +97,20 @@ class TestDetailServer:
         resp = admin_client.get('/servers/99999')
         assert resp.status_code == 404
 
+    def test_detail_shows_vps_manager_not_connected(self, admin_client, sample_server):
+        """Фикстура приезжает без vps_manager_server_id — машина не подключена."""
+        assert sample_server.vps_manager_server_id is None  # страховка от смены фикстуры
+        body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
+        assert 'не подключён' in body
+
+    def test_detail_shows_vps_manager_connected(self, admin_client, sample_server, db):
+        """Непустой vps_manager_server_id → «подключён» и номер машины на той стороне."""
+        sample_server.vps_manager_server_id = 12
+        db.session.commit()
+        body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
+        assert 'не подключён' not in body
+        assert '#12' in body
+
 
 # --------------------------------------------------------------------------- #
 # Edit (full form)
