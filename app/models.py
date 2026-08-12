@@ -18,6 +18,8 @@ class User(UserMixin, db.Model):
     is_local = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
+    vps_manager_key_id = db.Column(db.Integer, nullable=True)   # id личного ключа в VPS Manager
+    key_downloaded_at = db.Column(db.DateTime, nullable=True)   # NULL = ключ ещё не скачан
 
     @property
     def is_admin(self):

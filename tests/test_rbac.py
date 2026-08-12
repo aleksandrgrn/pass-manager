@@ -238,6 +238,12 @@ class TestRoleProperties:
         assert u.is_superadmin is True
         assert u.can_view_passwords is True
 
+    def test_new_user_has_null_key_fields(self, app):
+        from app.models import User
+        u = User(username='z', role='admin')
+        assert u.vps_manager_key_id is None
+        assert u.key_downloaded_at is None
+
 
 # --------------------------------------------------------------------------- #
 # Форма редактирования — та же граница, что у списка и карточки
