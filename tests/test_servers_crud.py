@@ -120,6 +120,20 @@ class TestEditServer:
         assert refreshed.name == 'renamed-via-edit'
         assert refreshed.ip_address == '203.0.113.99'
 
+    def test_edit_form_has_no_onboarding_hint(self, superadmin_client, sample_server):
+        """FIX-FORM-HINT: подсказка про онбординг живёт только на экране создания.
+
+        В форме правки онбординг не запускается, а пустое поле пароля стирает
+        root-пароль (populate_obj → сеттер password на falsy пишет None), то есть
+        подсказка приглашает к разрушительному действию.
+        """
+        body = superadmin_client.get(
+            f'/servers/{sample_server.id}/edit'
+        ).get_data(as_text=True)
+        # само поле на месте — иначе следующий assert зелен вакуумно
+        assert 'name="password" type="password"' in body
+        assert 'Оставьте пустым, если включён автоматический онбординг' not in body
+
 
 # --------------------------------------------------------------------------- #
 # Delete
