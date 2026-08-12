@@ -148,5 +148,9 @@ def get_private_key(key_id: int, job_id: Optional[str] = None) -> Dict[str, Any]
     return _request("GET", f"/keys/{key_id}/private", job_id=job_id)
 
 
+def get_private_key_ppk(key_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
+    return _request("GET", f"/keys/{key_id}/private.ppk", job_id=job_id)
+
+
 def list_key_deployments(job_id: Optional[str] = None) -> Dict[str, Any]:
     return _request("GET", "/key-deployments", job_id=job_id)
