@@ -125,6 +125,18 @@
     </div>
 
     <div class="mt-6 flex gap-3">
+        {% if can_grant %}
+            {% if has_access %}
+            <span class="pill on self-center">Доступ выдан</span>
+            {% elif server.vps_manager_server_id %}
+            <form method="POST" action="{{ url_for('servers.grant_self', server_id=server.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn primary">Выдать себе доступ</button>
+            </form>
+            {% else %}
+            <span class="text-sm text-faint self-center">Сервер не подключён к VPS Manager — доступ выдать нельзя</span>
+            {% endif %}
+        {% endif %}
         <a href="{{ url_for('servers.edit', server_id=server.id) }}" class="btn primary">Редактировать</a>
         <form method="POST" action="{{ url_for('servers.delete', server_id=server.id) }}"
               onsubmit="return confirm('Удалить сервер «{{ server.name }}»?');">

@@ -10,9 +10,11 @@ from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.models import (
     Server, Domain, ProvisioningJob, ServerGroup, ServerGroupMembership,
+    AccessAssignment,
 )
-from app.access.rules import assert_can_access_server, visible_servers
+from app.access.rules import assert_can_access_server, visible_servers, can_self_grant
 from app.auth.decorators import role_required
+from app.services import vps_client
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS, TRANSIENT_FORM_FIELDS,
@@ -154,7 +156,61 @@ def detail(server_id):
         domains=domains,
         passwords_visible=_passwords_visible(),
         provisioning_job=provisioning_job,
+        can_grant=can_self_grant(current_user, server),
+        has_access=AccessAssignment.query.filter_by(
+            user_id=current_user.id, server_id=server.id, state='active',
+        ).first() is not None,
     )
+
+
+@servers_bp.route('/<int:server_id>/grant-self', methods=['POST'])
+@login_required
+def grant_self(server_id):
+    """C2: выдать себе доступ на сервер своей группы личным ключом."""
+    server = _get_server_or_403(server_id)
+
+    if not can_self_grant(current_user, server):
+        abort(403, description='Самостоятельная выдача доступна только на серверах ваших групп')
+
+    # Проверки по возрастанию цены: сначала своя база, сеть — в самом конце.
+    if server.vps_manager_server_id is None:
+        flash('Сервер не подключён к VPS Manager — обратитесь к суперадмину.', 'error')
+        return redirect(url_for('servers.detail', server_id=server.id))
+
+    existing = AccessAssignment.query.filter_by(
+        user_id=current_user.id, server_id=server.id, state='active',
+    ).first()
+    if existing is not None:
+        flash('Доступ на этот сервер у вас уже есть.', 'info')
+        return redirect(url_for('servers.detail', server_id=server.id))
+
+    key_id = current_user.vps_manager_key_id
+    if key_id is None:
+        # Р: тип rsa, не ed25519 — в парке есть машины со старым SSH.
+        resp = vps_client.generate_key(name=current_user.username, key_type='rsa')
+        if not resp.get('success'):
+            flash(f'Не удалось создать ключ: {resp.get("message")}', 'error')
+            return redirect(url_for('servers.detail', server_id=server.id))
+        key_id = resp['id']
+        current_user.vps_manager_key_id = key_id
+        db.session.commit()
+
+    # server_id тут — номер машины на стороне VPS Manager, не наш server.id.
+    resp = vps_client.deploy_key(key_id=key_id, server_id=server.vps_manager_server_id)
+    if not resp.get('success'):
+        flash(f'Не удалось раскатать ключ: {resp.get("message")}', 'error')
+        return redirect(url_for('servers.detail', server_id=server.id))
+
+    db.session.add(AccessAssignment(
+        server_id=server.id,
+        user_id=current_user.id,
+        state='active',
+        granted_by=current_user.id,
+        vps_manager_key_id=key_id,
+    ))
+    db.session.commit()
+    flash('Доступ выдан. Ключ можно скачать во вкладке «Доступ».', 'success')
+    return redirect(url_for('servers.detail', server_id=server.id))
 
 
 @servers_bp.route('/new', methods=['GET', 'POST'])
