@@ -72,6 +72,14 @@ class TestCreateServer:
         # Гибридное свойство должно вернуть именно plaintext-значение
         assert srv.password == 'abc-secret'
 
+    def test_create_form_shows_both_password_hints(self, admin_client):
+        """FIX-FORM-PW: форма создания отдаёт обе подсказки — под password и
+        под bootstrap_password. Мутация (убрать любую из них) должна валить
+        ровно этот тест."""
+        body = admin_client.get('/servers/new').get_data(as_text=True)
+        assert 'Оставьте пустым, если включён автоматический онбординг — пароль будет сгенерирован и записан сюда сам.' in body
+        assert 'Нужен только для первого подключения. В базе не хранится.' in body
+
 
 # --------------------------------------------------------------------------- #
 # Detail

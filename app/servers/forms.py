@@ -14,7 +14,7 @@ class ServerForm(FlaskForm):
     # заведя сервер, тут же терял бы его из виду. Варианты подставляет view —
     # список зависит от того, кто именно заполняет форму.
     group_id = SelectField('Группа', coerce=int, validators=[Optional()])
-    password = StringField('Пароль', validators=[Optional()])
+    password = StringField('Пароль root', validators=[Optional()])  # FIX-FORM-PW: прежнее «Пароль» путали с bootstrap_password
     ip_address = StringField('IP-адрес', validators=[Optional()])
     provider = StringField('Провайдер', validators=[Optional()])
     provider_login = StringField('Логин провайдера', validators=[Optional()])
@@ -36,11 +36,11 @@ class ServerForm(FlaskForm):
     mgt_login = StringField('Management Login', validators=[Optional()])
     mgt_pass = StringField('Management Password', validators=[Optional()])
     # Track C A3: онбординг pipeline (specs/track-c-plan-A3.md, Фаза A3.1)
-    ssh_username = StringField('Bootstrap-пользователь', default='root', validators=[Optional()])  # FIX-9: пишется в модель
+    ssh_username = StringField('SSH-пользователь', default='root', validators=[Optional()])  # FIX-9: пишется в модель; FIX-FORM-PW: к бутстрапу отношения не имеет
     ssh_port = IntegerField('SSH-порт', default=22,
                             validators=[Optional(), NumberRange(min=1, max=65535)])
     do_onboarding = BooleanField('Выполнить автоматический онбординг', default=False)  # транзиентное
-    bootstrap_password = StringField('Пароль для bootstrap', validators=[Optional()])  # транзиентное (FIX-5), в БД не хранится
+    bootstrap_password = StringField('Текущий пароль от хостера', validators=[Optional()])  # транзиентное (FIX-5), в БД не хранится; FIX-FORM-PW: прежнее «Пароль для bootstrap» путали с password
 
 
 class ServerFilterForm(FlaskForm):
