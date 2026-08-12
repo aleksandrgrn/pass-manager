@@ -155,6 +155,19 @@ class TestEndpointMapping:
         assert args[0] == "GET"
         assert args[1].endswith("/servers/3/access-key")
 
+    def test_get_private_key_get_path_param(self, configured_app):
+        with configured_app.app_context(), patch(
+            "app.services.vps_client.requests.request"
+        ) as mock_req:
+            mock_req.return_value = _mock_response({"success": True, "private_key": "pem"})
+            result = vps_client.get_private_key(key_id=7)
+
+        assert result["private_key"] == "pem"
+        args, kwargs = mock_req.call_args
+        assert args[0] == "GET"
+        assert args[1].endswith("/keys/7/private")
+        assert kwargs["headers"]["Authorization"] == "Bearer test-token-xyz"
+
     def test_list_key_deployments_get_path_and_bearer(self, configured_app):
         with configured_app.app_context(), patch(
             "app.services.vps_client.requests.request"
