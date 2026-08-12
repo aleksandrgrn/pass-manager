@@ -30,6 +30,7 @@
             <div>
                 {{ form.password.label(class_='field-label') }}
                 {{ form.password(class_='field mt-1 font-mono', autocomplete='new-password', type='password') }}
+                <p class="text-xs text-faint mt-2">Оставьте пустым, если включён автоматический онбординг — пароль будет сгенерирован и записан сюда сам.</p>
             </div>
             {% endif %}
             <div>
@@ -83,6 +84,7 @@
                 <div class="mt-2 max-w-xs">
                     {{ form.bootstrap_password.label(class_='field-label') }}
                     {{ form.bootstrap_password(class_='field mt-1 font-mono', autocomplete='new-password', type='password') }}
+                    <p class="text-xs text-faint mt-2">Нужен только для первого подключения. В базе не хранится.</p>
                 </div>
             </div>
             {% endif %}
