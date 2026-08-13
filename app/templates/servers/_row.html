@@ -69,7 +69,7 @@
         <div class="row-actions">
         {% set access = access_states.get(server.id) %}
         {% if access == 'has' %}
-        <span class="icon-btn" style="color: var(--success); cursor: default"
+        <span class="icon-btn" role="img" style="color: var(--success); cursor: default"
               title="Доступ выдан" aria-label="Доступ на {{ server.name }} выдан">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
         </span>
@@ -82,7 +82,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
         </button>
         {% elif access == 'noconn' %}
-        <span class="icon-btn" style="opacity: .3; cursor: default"
+        <span class="icon-btn" role="img" style="opacity: .3; cursor: default"
               title="Сервер не подключён к VPS Manager"
               aria-label="{{ server.name }} не подключён к VPS Manager">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>

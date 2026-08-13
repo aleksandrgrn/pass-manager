@@ -7,6 +7,7 @@ HTMX-подмены, а не редирект — состояние блоко�
 поэтому после любой мутации проще и надёжнее перерисовать все три блока целиком.
 """
 import io
+import json
 import zipfile
 from datetime import datetime
 
@@ -15,9 +16,11 @@ from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import ServerGroup, ServerGroupMembership, User, AccessAssignment
+from app.models import ServerGroup, ServerGroupMembership, User, AccessAssignment, ProvisioningJob, Server
+from app.access.rules import servers_needing_self_grant
 from app.auth.decorators import role_required
 from app.services import vps_client
+from app.servers.views import _grant_access
 
 access_bp = Blueprint('access', __name__)
 
@@ -221,3 +224,97 @@ def reset_key_download(user_id):
     user.key_downloaded_at = None
     db.session.commit()
     return _render_blocks()
+
+
+_ACTIVE_BATCH_STATUSES = ('pending', 'running')
+
+
+def _remaining_for_grant_all(user, exclude_ids):
+    """Остаток C3-2 минус то, что этот job уже попытался выдать.
+
+    Исключение по id нужно отдельно от `servers_needing_self_grant`: неудачная
+    попытка не создаёт `AccessAssignment`, поэтому без исключения постоянно
+    падающий сервер выбирался бы на каждом шаге заново и опрос не
+    остановился бы никогда.
+    """
+    query = servers_needing_self_grant(user)
+    if exclude_ids:
+        query = query.filter(~Server.id.in_(exclude_ids))
+    return query
+
+
+def _get_grant_all_job_or_403(job_id):
+    job = ProvisioningJob.query.get_or_404(job_id)
+    if job.job_type != 'self_grant_batch' or job.initiated_by != current_user.id:
+        abort(403, description='Это не ваша задача выдачи доступа')
+    return job
+
+
+@access_bp.route('/grant-self/all', methods=['POST'])
+@login_required
+def start_grant_all():
+    """C3-2: выдать себе доступ на все серверы моих групп, где его ещё нет."""
+    existing = ProvisioningJob.query.filter(
+        ProvisioningJob.initiated_by == current_user.id,
+        ProvisioningJob.job_type == 'self_grant_batch',
+        ProvisioningJob.status.in_(_ACTIVE_BATCH_STATUSES),
+    ).first()
+    if existing is not None:
+        return redirect(url_for('access.grant_all_progress', job_id=existing.id))
+
+    if servers_needing_self_grant(current_user).first() is None:
+        flash('Доступ уже выдан на все ваши серверы.', 'info')
+        return redirect(url_for('access.index'))
+
+    job = ProvisioningJob(
+        initiated_by=current_user.id,
+        job_type='self_grant_batch',
+        status='running',
+        steps_json=json.dumps({'results': []}),
+    )
+    db.session.add(job)
+    db.session.commit()
+    return redirect(url_for('access.grant_all_progress', job_id=job.id))
+
+
+@access_bp.route('/grant-self/all/<int:job_id>')
+@login_required
+def grant_all_progress(job_id):
+    job = _get_grant_all_job_or_403(job_id)
+    results = json.loads(job.steps_json)['results']
+    return render_template('access/grant_all.html', job=job, results=results)
+
+
+@access_bp.route('/grant-self/all/<int:job_id>/step', methods=['POST'])
+@login_required
+def grant_all_step(job_id):
+    """Один сервер за запрос — тот же принцип опроса, что у онбординга
+    (`run_next_step`), но без фиксированного списка шагов: следующий сервер
+    каждый раз выбирается заново из остатка (`servers_needing_self_grant`),
+    а не из заранее сохранённого списка."""
+    job = _get_grant_all_job_or_403(job_id)
+    state = json.loads(job.steps_json)
+    attempted_ids = [r['server_id'] for r in state['results']]
+
+    if job.status in _ACTIVE_BATCH_STATUSES:
+        server = _remaining_for_grant_all(current_user, attempted_ids).order_by(Server.id).first()
+        if server is not None:
+            status, detail = _grant_access(current_user, server)
+            state['results'].append({
+                'server_id': server.id,
+                'server_name': server.name,
+                'status': status,
+                'detail': detail,
+            })
+            job.steps_json = json.dumps(state)
+            attempted_ids.append(server.id)
+
+        if _remaining_for_grant_all(current_user, attempted_ids).first() is None:
+            job.status = 'success'
+            job.finished_at = datetime.utcnow()
+
+        db.session.commit()
+
+    return render_template(
+        'access/_grant_all_progress.html', job=job, results=state['results'],
+    )

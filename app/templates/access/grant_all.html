@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Выдача доступа — Pass Manager{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-4">
+    <h1 class="text-xl font-semibold text-ink">Выдача доступа на все мои серверы</h1>
+    <div class="card p-4">
+        {% include 'access/_grant_all_progress.html' %}
+    </div>
+    <a href="{{ url_for('access.index') }}" class="text-sm text-muted">← Назад к «Доступ»</a>
+</div>
+{% endblock %}
