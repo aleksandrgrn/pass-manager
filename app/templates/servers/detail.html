@@ -45,6 +45,11 @@
             <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Основное</h2>
             <dl class="text-sm space-y-1">
                 <div><dt class="text-muted inline">IP: </dt><dd class="inline font-mono">{{ server.ip_address or '—' }}</dd></div>
+                {# Порт и пользователь нужны сотруднику для настройки PuTTY. Модалка их
+                   намеренно не называет: у машин они разные и переедут при переходе на
+                   личные учётки. ssh_port записывает C1 в момент подключения машины к
+                   VPS Manager — у неподключённых он пуст, но туда и не зайти. #}
+                <div><dt class="text-muted inline">Вход по SSH: </dt><dd class="inline font-mono">{{ server.ssh_username or '—' }}@{{ server.ip_address or '—' }}, порт {{ server.ssh_port or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Провайдер: </dt><dd class="inline">{{ server.provider or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Логин провайдера: </dt><dd class="inline">{{ server.provider_login or '—' }}</dd></div>
                 <div><dt class="text-muted inline">Пароль провайдера: </dt><dd class="inline font-mono{{ ' pw-mask' if server.provider_password else '' }}">{{ server.provider_password or '—' }}</dd></div>

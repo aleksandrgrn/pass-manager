@@ -2,7 +2,13 @@
 {% block title %}Доступ — Pass Manager{% endblock %}
 {% block content %}
 <div class="flex flex-col gap-4">
-    <h1 class="text-xl font-semibold text-ink">Доступ</h1>
+    <div class="flex items-center justify-between gap-4">
+        <h1 class="text-xl font-semibold text-ink">Доступ</h1>
+        {# Возврат к обучающей модалке после «Больше не показывать»: она же —
+           единственный способ для суперадмина увидеть текст, который получают
+           админы (сама она ему не открывается). #}
+        <button type="button" class="btn secondary" onclick="pmIntroOpen()">Как это работает</button>
+    </div>
     <div class="card p-4">
         <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Мой ключ</h2>
         {% if current_user.vps_manager_key_id %}

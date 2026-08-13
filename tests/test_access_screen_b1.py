@@ -81,6 +81,34 @@ class TestMenuVisibility:
         assert '/access/' in body
 
 
+class TestIntroModal:
+    """Обучающая модалка при первом входе.
+
+    Разметка есть у обеих ролей, автооткрытие — только у не-суперадмина: себе
+    доступ он не выдаёт и личного ключа не имеет, весь текст мимо него. Текст
+    ему всё же доступен — кнопкой «Как это работает» на вкладке «Доступ».
+
+    Проверяется ровно граница ролей. Сам `localStorage` и `showModal()`
+    тестами не берутся — JS-раннера в проекте нет, это живая проверка.
+    """
+
+    def test_admin_gets_autoopen(self, admin_client):
+        body = admin_client.get('/servers/').get_data(as_text=True)
+        assert 'id="intro"' in body
+        assert "localStorage.getItem('pm-intro-seen')" in body
+
+    def test_superadmin_has_markup_without_autoopen(self, superadmin_client):
+        body = superadmin_client.get('/servers/').get_data(as_text=True)
+        assert 'id="intro"' in body
+        assert "localStorage.getItem('pm-intro-seen')" not in body
+        # Пропадает только автовызов: открыть текст кнопкой суперадмин должен мочь.
+        assert 'window.pmIntroOpen = function' in body
+
+    def test_access_page_has_reopen_button(self, admin_client):
+        body = admin_client.get('/access/').get_data(as_text=True)
+        assert 'Как это работает' in body
+
+
 class TestCreateGroup:
     def test_superadmin_creates_group(self, superadmin_client):
         resp = superadmin_client.post('/access/groups', data={
