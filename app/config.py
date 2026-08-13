@@ -51,7 +51,7 @@ class Config:
     ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
 
     # Безопасность сессий и форм
-    PERMANENT_SESSION_LIFETIME = 3600  # 1 час (в секундах)
+    PERMANENT_SESSION_LIFETIME = 32400  # 9 часов: рабочий день + обед (в секундах)
     WTF_CSRF_TIME_LIMIT = 3600  # CSRF-токен живёт 1 час
 
     # LDAP
