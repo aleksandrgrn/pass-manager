@@ -4,7 +4,7 @@ from wtforms import (
     StringField, TextAreaField, BooleanField, HiddenField, FieldList, IntegerField,
     SelectField
 )
-from wtforms.validators import DataRequired, Optional, NumberRange
+from wtforms.validators import DataRequired, Optional, NumberRange, ValidationError
 
 
 class ServerForm(FlaskForm):
@@ -39,8 +39,27 @@ class ServerForm(FlaskForm):
     ssh_username = StringField('SSH-пользователь', default='root', validators=[Optional()])  # FIX-9: пишется в модель; FIX-FORM-PW: к бутстрапу отношения не имеет
     ssh_port = IntegerField('SSH-порт', default=22,
                             validators=[Optional(), NumberRange(min=1, max=65535)])
-    do_onboarding = BooleanField('Выполнить автоматический онбординг', default=False)  # транзиентное
-    bootstrap_password = StringField('Текущий пароль от хостера', validators=[Optional()])  # транзиентное (FIX-5), в БД не хранится; FIX-FORM-PW: прежнее «Пароль для bootstrap» путали с password
+    # default=True: со снятой галкой сервер заводится не подключённым к VPS
+    # Manager, и подключить его потом нечем — start_onboarding вызывается
+    # только отсюда. Подключение по умолчанию, отказ — осознанный.
+    do_onboarding = BooleanField('Выполнить автоматический онбординг', default=True)  # транзиентное
+    # Без Optional(): он на пустом поле рвёт цепочку через StopValidation, и
+    # validate_bootstrap_password ниже не запускается вовсе. Поле и так
+    # необязательное — обязательным его делает только галка онбординга.
+    bootstrap_password = StringField('Текущий пароль root (ssh) от хостера')  # транзиентное (FIX-5), в БД не хранится; FIX-FORM-PW: прежнее «Пароль для bootstrap» путали с password
+
+    def validate_bootstrap_password(self, field):
+        """Галка без пароля создаёт job, который уже не починить.
+
+        Пароль лежит в `steps_json` и стирается только после успеха, поэтому
+        «Перезапустить шаг» на карточке вечно повторяет попытку с пустым
+        значением, а ввести пароль задним числом негде.
+        """
+        if self.do_onboarding.data and not (field.data or '').strip():
+            raise ValidationError(
+                'Без пароля root онбординг не выполнится: '
+                'введите его или снимите галку автоматического онбординга',
+            )
 
 
 class ServerFilterForm(FlaskForm):
