@@ -99,7 +99,9 @@ def test_self_grant_is_forbidden_on_foreign_server(
 
     assert detail.status_code == 200
     assert response.status_code == 403
-    assert 'Выдать себе доступ' not in detail.get_data(as_text=True)
+    # Якорь — форма выдачи, а не подпись кнопки: ту же фразу произносит
+    # обучающая модалка, которая рендерится на каждой странице.
+    assert f'/servers/{server.id}/grant-self' not in detail.get_data(as_text=True)
 
 
 def test_self_grant_button_depends_on_connection(app, db, admin_client, sample_server):
@@ -111,8 +113,11 @@ def test_self_grant_button_depends_on_connection(app, db, admin_client, sample_s
     db.session.commit()
     unconnected = admin_client.get(f'/servers/{sample_server.id}')
 
-    assert 'Выдать себе доступ' in connected.get_data(as_text=True)
-    assert 'Выдать себе доступ' not in unconnected.get_data(as_text=True)
+    # Якорь — форма выдачи, а не подпись кнопки: ту же фразу произносит
+    # обучающая модалка, которая рендерится на каждой странице.
+    action = f'/servers/{sample_server.id}/grant-self'
+    assert action in connected.get_data(as_text=True)
+    assert action not in unconnected.get_data(as_text=True)
     assert 'Сервер не подключён к VPS Manager — доступ выдать нельзя' in unconnected.get_data(as_text=True)
 
 

@@ -98,18 +98,35 @@ class TestDetailServer:
         assert resp.status_code == 404
 
     def test_detail_shows_vps_manager_not_connected(self, admin_client, sample_server):
-        """Фикстура приезжает без vps_manager_server_id — машина не подключена."""
+        """Фикстура приезжает без vps_manager_server_id — машина не подключена.
+
+        Якорь — сама плашка, а не фраза: слова «не подключён» произносит ещё и
+        обучающая модалка, которая рендерится на каждой странице.
+        """
         assert sample_server.vps_manager_server_id is None  # страховка от смены фикстуры
         body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
-        assert 'не подключён' in body
+        assert 'pill off">не подключён' in body
 
     def test_detail_shows_vps_manager_connected(self, admin_client, sample_server, db):
         """Непустой vps_manager_server_id → «подключён» и номер машины на той стороне."""
         sample_server.vps_manager_server_id = 12
         db.session.commit()
         body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
-        assert 'не подключён' not in body
+        assert 'pill off">не подключён' not in body
         assert '#12' in body
+
+    def test_detail_shows_ssh_user_and_port(self, admin_client, sample_server, db):
+        """Порт и пользователь видны на карточке.
+
+        Обучающая модалка их намеренно не называет и отсылает сюда: у машин
+        они разные, а при переходе на личные учётки поменяется пользователь.
+        """
+        sample_server.ssh_username = 'root'
+        sample_server.ssh_port = 2233
+        db.session.commit()
+        body = admin_client.get(f'/servers/{sample_server.id}').get_data(as_text=True)
+        assert 'Вход по SSH' in body
+        assert f'root@{sample_server.ip_address}, порт 2233' in body
 
 
 # --------------------------------------------------------------------------- #

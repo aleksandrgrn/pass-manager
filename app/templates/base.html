@@ -187,6 +187,26 @@
       .field-label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
 
       input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+      /* Обучающая модалка. Нативный <dialog>: затемнение, Esc и возврат
+         фокуса — от браузера, своего кода на это нет. Селекторы по элементу
+         внутри .intro нужны потому, что preflight Tailwind сносит отступы
+         абзацев и маркеры списков. */
+      .intro {
+        background: var(--surface); color: var(--ink);
+        border: 1px solid var(--line); border-radius: 10px;
+        max-width: 44rem; width: calc(100% - 2rem);
+        max-height: 85vh; overflow-y: auto; padding: 24px;
+      }
+      .intro::backdrop { background: rgba(0,0,0,.5); }
+      .intro h2 { font-size: 18px; font-weight: 600; margin-bottom: 14px; }
+      .intro p  { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+      .intro ul { font-size: 14px; line-height: 1.5; list-style: disc;
+                  margin: -4px 0 12px 20px; }
+      .intro li { margin-bottom: 5px; }
+      .intro strong { font-weight: 600; }
+      .intro code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+                    background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
     </style>
     <script>
       // Anti-FOUC: apply saved theme before first paint
@@ -363,6 +383,81 @@
         {% block content %}{% endblock %}
     </main>
 </div>
+{% if current_user.is_authenticated %}
+{# Обучающая модалка. Разметка есть у всех, включая суперадмина: сама она ему
+   не открывается (доступ себе он не выдаёт и личного ключа не имеет), но
+   ссылка «Как это работает» на вкладке «Доступ» показывает ему тот же текст —
+   чтобы было что открыть, когда админ спрашивает по телефону. #}
+{# tabindex="-1" — чтобы было куда посадить фокус при открытии, см. pmIntroOpen. #}
+<dialog id="intro" class="intro" aria-labelledby="intro-title" tabindex="-1">
+    <h2 id="intro-title">Как выдать себе доступ на серверы</h2>
+
+    <p><strong>1. Вы видите свои серверы.</strong> В списке — машины тех групп, в которых вы
+        состоите. Ничего не видно или серверов не хватает — попросите суперадмина добавить вас
+        в нужную группу.</p>
+
+    <p><strong>2. Ключ в строке сервера показывает ваш доступ.</strong></p>
+    <ul>
+        <li><strong>зелёный</strong> — доступ есть, можно заходить;</li>
+        <li><strong>серый</strong> — доступа нет. Выдать себе можно двумя способами, результат
+            одинаковый: нажать на этот ключик прямо в списке или открыть «Детали» сервера и
+            нажать внизу кнопку «Выдать себе доступ»;</li>
+        <li><strong>бледный</strong> — сервер не подключён к системе управления ключами, выдать
+            доступ на него нельзя. Обычно такого не бывает: при заведении сервера подключение
+            происходит само. Бледный ключ значит одно из двух — либо при заведении сняли галку
+            автоматического онбординга, либо онбординг не прошёл. Откройте «Детали»: если там
+            красная плашка с ошибкой, нажмите «Перезапустить шаг». Если плашки нет — сообщите
+            суперадмину, из интерфейса такой сервер пока не подключить.</li>
+    </ul>
+
+    <p><strong>3. Кнопка «Выдать себе доступ на все мои серверы»</strong> на вкладке «Доступ»
+        делает то же самое сразу по всему списку. Откроется страница с прогрессом, серверы
+        обрабатываются по одному.</p>
+    <ul>
+        <li>Вкладку можно закрыть — прогон продолжится с места остановки, когда вы откроете её
+            снова.</li>
+        <li>Пока прогон идёт, повторное нажатие кнопки ничего не ускорит.</li>
+        <li>Если сервер не удался, <strong>в этом прогоне</strong> он больше не повторяется.
+            Чтобы попробовать ещё раз — дождитесь надписи «Готово» и нажмите кнопку заново.
+            Новый прогон возьмёт всё, на что доступа так и нет.</li>
+    </ul>
+
+    <p><strong>4. Личный ключ скачивается один раз.</strong> Кнопка «Скачать ключ» на вкладке
+        «Доступ». В архиве два файла: <code>id_rsa</code> для OpenSSH и встроенного ssh в
+        Windows, <code>id_rsa.ppk</code> для PuTTY. <strong>Второй раз скачать нельзя</strong> —
+        сохраните архив сразу и надёжно. Потеряете — новую попытку открывает только суперадмин.</p>
+
+    <p><strong>5. Заходить</strong> — пользователь, адрес и порт указаны в «Деталях» сервера,
+        ключ — из архива.</p>
+
+    <p><strong>6. Заводя новый сервер</strong> — оставьте галку «Выполнить автоматический
+        онбординг» включённой и введите текущий пароль root от хостера. Тогда машина подключится
+        сразу и ключ у неё будет серым, а не бледным.</p>
+
+    <form method="dialog" class="flex items-center justify-between gap-4 pt-1">
+        <label class="inline-flex items-center gap-2 text-sm text-muted">
+            <input type="checkbox" id="intro-hide"> Больше не показывать
+        </label>
+        <button type="submit" class="btn primary">Понятно</button>
+    </form>
+</dialog>
+<script>
+  (function(){
+    var dlg = document.getElementById('intro');
+    if (!dlg) return;
+    // Открывать строго с начала. Сам по себе showModal() сажает фокус на первый
+    // интерактивный элемент — галку «Больше не показывать» внизу — и уводит
+    // текст под заголовок: человек видит середину пункта 2 вместо начала.
+    window.pmIntroOpen = function(){ dlg.showModal(); dlg.focus(); dlg.scrollTop = 0; };
+    dlg.addEventListener('close', function(){
+      if (document.getElementById('intro-hide').checked) localStorage.setItem('pm-intro-seen', '1');
+    });
+    {% if not current_user.is_superadmin %}
+    if (!localStorage.getItem('pm-intro-seen')) window.pmIntroOpen();
+    {% endif %}
+  })();
+</script>
+{% endif %}
 <script>
   var tt = document.getElementById('theme-toggle');
   if (tt) tt.addEventListener('click', function(){
