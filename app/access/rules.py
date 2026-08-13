@@ -83,3 +83,17 @@ def can_self_grant(user, server):
     нажмёт кнопку и заведёт себе вторую активную выдачу, уже от своего имени.
     """
     return server.group_id is not None and server.group_id in _group_ids(user)
+
+
+def servers_needing_self_grant(user):
+    """Остаток для массовой самовыдачи (C3-2): серверы моих групп, где у меня
+    нет активной выдачи.
+
+    Пересчитывается заново на каждый вызов, а не хранится списком: состояние
+    живёт в `AccessAssignment`, поэтому обрыв процесса или закрытая вкладка
+    ничего не портят — следующий проход просто увидит тот же остаток.
+    """
+    return Server.query.filter(
+        Server.group_id.in_(_group_ids(user)),
+        ~Server.id.in_(_granted_server_ids(user)),
+    )

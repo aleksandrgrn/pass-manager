@@ -210,6 +210,52 @@ def detail(server_id):
     )
 
 
+def _grant_access(user, server):
+    """Пытается выдать пользователю личный доступ на сервер. Общая логика для
+    точечной выдачи (`grant_self`) и массовой (C3-2, `app/access/views.py`).
+
+    Возвращает (status, detail):
+    - 'granted'       — доступ выдан только что, detail=None;
+    - 'already'       — активная выдача уже была, detail=None;
+    - 'not_connected' — сервер не подключён к VPS Manager, detail=None;
+    - 'key_failed'    — не удалось создать личный ключ, detail=сообщение vps_client;
+    - 'deploy_failed' — не удалось раскатать ключ на сервер, detail=сообщение vps_client.
+    """
+    if server.vps_manager_server_id is None:
+        return 'not_connected', None
+
+    existing = AccessAssignment.query.filter_by(
+        user_id=user.id, server_id=server.id, state='active',
+    ).first()
+    if existing is not None:
+        return 'already', None
+
+    key_id = user.vps_manager_key_id
+    if key_id is None:
+        # Р: тип rsa, не ed25519 — в парке есть машины со старым SSH.
+        resp = vps_client.generate_key(name=user.username, key_type='rsa')
+        if not resp.get('success'):
+            return 'key_failed', resp.get('message')
+        key_id = resp['id']
+        user.vps_manager_key_id = key_id
+        db.session.commit()
+
+    # server_id тут — номер машины на стороне VPS Manager, не наш server.id.
+    resp = vps_client.deploy_key(key_id=key_id, server_id=server.vps_manager_server_id)
+    if not resp.get('success'):
+        return 'deploy_failed', resp.get('message')
+
+    db.session.add(AccessAssignment(
+        server_id=server.id,
+        user_id=user.id,
+        state='active',
+        granted_by=user.id,
+        vps_manager_key_id=key_id,
+    ))
+    db.session.commit()
+    return 'granted', None
+
+
 @servers_bp.route('/<int:server_id>/grant-self', methods=['POST'])
 @login_required
 def grant_self(server_id):
@@ -243,42 +289,21 @@ def grant_self(server_id):
             access_counts=access_counts,
         )
 
-    # Проверки по возрастанию цены: сначала своя база, сеть — в самом конце.
-    if server.vps_manager_server_id is None:
-        return _fail('Сервер не подключён к VPS Manager — обратитесь к суперадмину.')
+    status, detail = _grant_access(current_user, server)
 
-    existing = AccessAssignment.query.filter_by(
-        user_id=current_user.id, server_id=server.id, state='active',
-    ).first()
-    if existing is not None:
+    if status == 'not_connected':
+        return _fail('Сервер не подключён к VPS Manager — обратитесь к суперадмину.')
+    if status == 'key_failed':
+        return _fail(f'Не удалось создать ключ: {detail}')
+    if status == 'deploy_failed':
+        return _fail(f'Не удалось раскатать ключ: {detail}')
+    if status == 'already':
         if htmx:
             return _row()
         flash('Доступ на этот сервер у вас уже есть.', 'info')
         return redirect(url_for('servers.detail', server_id=server.id))
 
-    key_id = current_user.vps_manager_key_id
-    if key_id is None:
-        # Р: тип rsa, не ed25519 — в парке есть машины со старым SSH.
-        resp = vps_client.generate_key(name=current_user.username, key_type='rsa')
-        if not resp.get('success'):
-            return _fail(f'Не удалось создать ключ: {resp.get("message")}')
-        key_id = resp['id']
-        current_user.vps_manager_key_id = key_id
-        db.session.commit()
-
-    # server_id тут — номер машины на стороне VPS Manager, не наш server.id.
-    resp = vps_client.deploy_key(key_id=key_id, server_id=server.vps_manager_server_id)
-    if not resp.get('success'):
-        return _fail(f'Не удалось раскатать ключ: {resp.get("message")}')
-
-    db.session.add(AccessAssignment(
-        server_id=server.id,
-        user_id=current_user.id,
-        state='active',
-        granted_by=current_user.id,
-        vps_manager_key_id=key_id,
-    ))
-    db.session.commit()
+    # status == 'granted'
     if htmx:
         return _row()
     flash('Доступ выдан. Ключ можно скачать во вкладке «Доступ».', 'success')

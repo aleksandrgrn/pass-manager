@@ -1,0 +1,30 @@
+<div id="grant-all-progress"
+     {% if job.status not in ('success', 'failed', 'cancelled') %}
+     hx-post="{{ url_for('access.grant_all_step', job_id=job.id) }}"
+     hx-trigger="load delay:500ms"
+     hx-swap="outerHTML"
+     {% endif %}>
+    {% if job.status not in ('success', 'failed', 'cancelled') %}
+    <p class="text-sm text-muted">Выдаю доступ… обработано {{ results|length }}.</p>
+    {% else %}
+    <p class="text-sm text-ink">
+        Готово. Выдано: {{ results|selectattr('status', 'equalto', 'granted')|list|length }},
+        уже было: {{ results|selectattr('status', 'equalto', 'already')|list|length }},
+        не удалось: {{ results|rejectattr('status', 'in', ['granted', 'already'])|list|length }}.
+    </p>
+    {% endif %}
+    <ul class="text-sm space-y-1 mt-2">
+        {% for r in results %}
+        <li class="flex items-center justify-between">
+            <span>{{ r.server_name }}</span>
+            {% if r.status == 'granted' %}
+            <span class="pill on">выдан</span>
+            {% elif r.status == 'already' %}
+            <span class="pill on">уже был</span>
+            {% else %}
+            <span class="pill off" title="{{ r.detail or '' }}">ошибка</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
