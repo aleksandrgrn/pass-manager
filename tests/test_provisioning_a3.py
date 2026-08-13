@@ -88,6 +88,32 @@ class TestOnboardingCheckboxOn:
         mock_add.assert_not_called()
 
 
+class TestOnboardingIsTheDefault:
+    """Галка стоит по умолчанию, и без пароля форма не проходит.
+
+    Со снятой галкой сервер остаётся не подключённым к VPS Manager, а
+    подключить его потом нечем: start_onboarding вызывается только из формы
+    создания. Галка без пароля — тупик другого рода: job создастся и упадёт,
+    а пароль в него уже не подставить.
+    """
+
+    def test_onboarding_checked_by_default(self, admin_client, db):
+        resp = admin_client.get('/servers/new')
+        assert resp.status_code == 200
+        assert b'<input checked id="do_onboarding"' in resp.data
+
+    def test_onboarding_without_password_rejected(self, admin_client, db):
+        resp = admin_client.post('/servers/new', data={
+            'name': 'vps-no-pw-01',
+            'ip_address': '198.51.100.71',
+            'do_onboarding': 'y',
+        })
+
+        assert resp.status_code == 200  # форма перерисована с ошибкой
+        assert Server.query.filter_by(name='vps-no-pw-01').first() is None
+        assert ProvisioningJob.query.count() == 0
+
+
 # --------------------------------------------------------------------------- #
 # Шаг bootstrap: успех / ошибка / идемпотентность / утечка пароля
 # --------------------------------------------------------------------------- #
