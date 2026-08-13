@@ -53,11 +53,41 @@
             {{ '✓' if server.has_vpn else '—' }}
         </button>
     </td>
+    {% if current_user.is_superadmin %}
+    <td class="text-center">
+        {% if access_counts.get(server.id, 0) %}
+        <span class="pill on">{{ access_counts[server.id] }}&nbsp;чел.</span>
+        {% else %}
+        <span class="text-faint text-xs">никто</span>
+        {% endif %}
+    </td>
+    {% endif %}
     <td class="cell-flex">
         <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-muted text-xs">{{ server.notes or '—' }}</div>
     </td>
     <td class="text-center whitespace-nowrap">
         <div class="row-actions">
+        {% set access = access_states.get(server.id) %}
+        {% if access == 'has' %}
+        <span class="icon-btn" style="color: var(--success); cursor: default"
+              title="Доступ выдан" aria-label="Доступ на {{ server.name }} выдан">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
+        </span>
+        {% elif access == 'can' %}
+        <button hx-post="{{ url_for('servers.grant_self', server_id=server.id) }}"
+                hx-target="#server-row-{{ server.id }}" hx-swap="outerHTML"
+                hx-confirm="Выдать себе доступ на «{{ server.name }}»?"
+                class="icon-btn" title="Выдать себе доступ"
+                aria-label="Выдать себе доступ на {{ server.name }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
+        </button>
+        {% elif access == 'noconn' %}
+        <span class="icon-btn" style="opacity: .3; cursor: default"
+              title="Сервер не подключён к VPS Manager"
+              aria-label="{{ server.name }} не подключён к VPS Manager">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
+        </span>
+        {% endif %}
             <a href="{{ url_for('servers.detail', server_id=server.id) }}"
                class="icon-btn" aria-label="Детали {{ server.name }}" title="Детали">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>

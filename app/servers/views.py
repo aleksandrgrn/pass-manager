@@ -60,6 +60,50 @@ def _passwords_visible():
     return current_user.is_authenticated and current_user.can_view_passwords
 
 
+def _access_cells(servers):
+    """Что показать в колонке доступа: иконка сотруднику, счётчик суперадмину.
+
+    Возвращает две карты по id сервера. Непустая всегда ровно одна: суперадмин
+    себе доступ не выдаёт, поэтому иконка ему не нужна, а сотруднику незачем
+    считать чужие выдачи.
+    """
+    if current_user.is_superadmin:
+        counts = dict(
+            db.session.query(AccessAssignment.server_id, db.func.count())
+            .filter(AccessAssignment.state == 'active')
+            .group_by(AccessAssignment.server_id)
+            .all()
+        )
+        return {}, {server.id: counts.get(server.id, 0) for server in servers}
+
+    granted = {
+        row[0] for row in
+        AccessAssignment.query
+        .with_entities(AccessAssignment.server_id)
+        .filter(
+            AccessAssignment.user_id == current_user.id,
+            AccessAssignment.state == 'active',
+        )
+        .all()
+    }
+    states = {}
+    for server in servers:
+        if server.id in granted:
+            states[server.id] = 'has'
+        elif not can_self_grant(current_user, server):
+            # Сегодня недостижимо: правило видимости пускает не-суперадмина либо
+            # к серверам своих групп, либо к тем, где у него активная выдача, —
+            # а та уже разобрана веткой выше. Ветка стоит страховкой на случай,
+            # если visible_servers когда-нибудь ослабят: тогда кнопка не появится
+            # там, где grant_self ответит 403. Тестом не покрывается сознательно.
+            states[server.id] = 'none'
+        elif server.vps_manager_server_id:
+            states[server.id] = 'can'
+        else:
+            states[server.id] = 'noconn'
+    return states, {}
+
+
 NO_GROUP_CHOICE = 0
 
 
@@ -118,6 +162,7 @@ def list_servers():
     per_page = current_app.config.get('ITEMS_PER_PAGE', 50)
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     servers = pagination.items
+    access_states, access_counts = _access_cells(servers)
 
     # B1.4: пустой список у человека без единой группы — не поломка, а следствие
     # того, что ему ещё не выдали доступ. Отдельное сообщение вместо «Нет записей».
@@ -134,6 +179,8 @@ def list_servers():
         direction=direction,
         passwords_visible=_passwords_visible(),
         no_group_access=no_group_access,
+        access_states=access_states,
+        access_counts=access_counts,
     )
 
 
@@ -172,15 +219,40 @@ def grant_self(server_id):
     if not can_self_grant(current_user, server):
         abort(403, description='Самостоятельная выдача доступна только на серверах ваших групп')
 
+    htmx = request.headers.get('HX-Request')
+
+    def _fail(message):
+        """Отказ: причину человеку показывает карточка, поэтому уходим на неё.
+
+        Под HTMX редирект нельзя отдавать телом ответа — заголовок HX-Redirect
+        заставляет браузер перейти по-настоящему, и flash виден на карточке.
+        """
+        flash(message, 'error')
+        if htmx:
+            return '', 204, {'HX-Redirect': url_for('servers.detail', server_id=server.id)}
+        return redirect(url_for('servers.detail', server_id=server.id))
+
+    def _row():
+        """Перерисованная строка списка — ответ на успешный клик по иконке."""
+        access_states, access_counts = _access_cells([server])
+        return render_template(
+            'servers/_row.html',
+            server=server,
+            passwords_visible=_passwords_visible(),
+            access_states=access_states,
+            access_counts=access_counts,
+        )
+
     # Проверки по возрастанию цены: сначала своя база, сеть — в самом конце.
     if server.vps_manager_server_id is None:
-        flash('Сервер не подключён к VPS Manager — обратитесь к суперадмину.', 'error')
-        return redirect(url_for('servers.detail', server_id=server.id))
+        return _fail('Сервер не подключён к VPS Manager — обратитесь к суперадмину.')
 
     existing = AccessAssignment.query.filter_by(
         user_id=current_user.id, server_id=server.id, state='active',
     ).first()
     if existing is not None:
+        if htmx:
+            return _row()
         flash('Доступ на этот сервер у вас уже есть.', 'info')
         return redirect(url_for('servers.detail', server_id=server.id))
 
@@ -189,8 +261,7 @@ def grant_self(server_id):
         # Р: тип rsa, не ed25519 — в парке есть машины со старым SSH.
         resp = vps_client.generate_key(name=current_user.username, key_type='rsa')
         if not resp.get('success'):
-            flash(f'Не удалось создать ключ: {resp.get("message")}', 'error')
-            return redirect(url_for('servers.detail', server_id=server.id))
+            return _fail(f'Не удалось создать ключ: {resp.get("message")}')
         key_id = resp['id']
         current_user.vps_manager_key_id = key_id
         db.session.commit()
@@ -198,8 +269,7 @@ def grant_self(server_id):
     # server_id тут — номер машины на стороне VPS Manager, не наш server.id.
     resp = vps_client.deploy_key(key_id=key_id, server_id=server.vps_manager_server_id)
     if not resp.get('success'):
-        flash(f'Не удалось раскатать ключ: {resp.get("message")}', 'error')
-        return redirect(url_for('servers.detail', server_id=server.id))
+        return _fail(f'Не удалось раскатать ключ: {resp.get("message")}')
 
     db.session.add(AccessAssignment(
         server_id=server.id,
@@ -209,6 +279,8 @@ def grant_self(server_id):
         vps_manager_key_id=key_id,
     ))
     db.session.commit()
+    if htmx:
+        return _row()
     flash('Доступ выдан. Ключ можно скачать во вкладке «Доступ».', 'success')
     return redirect(url_for('servers.detail', server_id=server.id))
 
@@ -373,10 +445,13 @@ def toggle_field(server_id):
     setattr(server, attr, not current_val)
     db.session.commit()
 
+    access_states, access_counts = _access_cells([server])
     return render_template(
         'servers/_row.html',
         server=server,
         passwords_visible=_passwords_visible(),
+        access_states=access_states,
+        access_counts=access_counts,
     )
 
 
