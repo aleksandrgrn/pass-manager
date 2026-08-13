@@ -5,10 +5,6 @@
     <h1 class="text-xl font-semibold text-ink">Доступ</h1>
     <div class="card p-4">
         <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Мой ключ</h2>
-        <form method="POST" action="{{ url_for('access.start_grant_all') }}" class="mb-3">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn">Выдать себе доступ на все мои серверы</button>
-        </form>
         {% if current_user.vps_manager_key_id %}
         <dl class="text-sm space-y-1">
             <div><dt class="text-muted inline">Имя ключа: </dt><dd class="inline font-mono">{{ current_user.username }}</dd></div>
@@ -27,6 +23,14 @@
         {% else %}
         <p class="text-sm text-faint">Личного ключа ещё нет. Он создастся, когда вы впервые выдадите себе доступ на сервере.</p>
         {% endif %}
+    </div>
+
+    <div class="card p-4">
+        <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Доступ на все серверы</h2>
+        <form method="POST" action="{{ url_for('access.start_grant_all') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn secondary">Выдать себе доступ на все мои серверы</button>
+        </form>
     </div>
 
     {% if current_user.is_superadmin %}
