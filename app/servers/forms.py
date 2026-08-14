@@ -9,12 +9,21 @@ from wtforms.validators import DataRequired, Optional, NumberRange, ValidationEr
 
 class ServerForm(FlaskForm):
     """Form for creating/editing a server (full record)."""
+
+    # Ставится в create(): при заведении «Пароль root» — это текущий пароль от
+    # хостера, вход онбординга, и без него bootstrap заведомо упадёт. В форме
+    # правки флаг остаётся False: пароль там уже есть, а у части импортированных
+    # записей его исторически нет — обязательность заблокировала бы сохранение.
+    require_password = False
     name = StringField('Название', validators=[DataRequired(message='Название обязательно')])
     # Track C B1: без группы сервер видит только суперадмин, поэтому админ,
     # заведя сервер, тут же терял бы его из виду. Варианты подставляет view —
     # список зависит от того, кто именно заполняет форму.
     group_id = SelectField('Группа', coerce=int, validators=[Optional()])
-    password = StringField('Пароль root', validators=[Optional()])  # FIX-FORM-PW: прежнее «Пароль» путали с bootstrap_password
+    # Без Optional(): он на пустом поле рвёт цепочку через StopValidation, и
+    # validate_password ниже не запускается вовсе. Обязательным поле делает
+    # только require_password.
+    password = StringField('Пароль root')  # FIX-FORM-PW: прежнее «Пароль» путали с bootstrap_password
     ip_address = StringField('IP-адрес', validators=[Optional()])
     provider = StringField('Провайдер', validators=[Optional()])
     provider_login = StringField('Логин провайдера', validators=[Optional()])
@@ -39,26 +48,18 @@ class ServerForm(FlaskForm):
     ssh_username = StringField('SSH-пользователь', default='root', validators=[Optional()])  # FIX-9: пишется в модель; FIX-FORM-PW: к бутстрапу отношения не имеет
     ssh_port = IntegerField('SSH-порт', default=22,
                             validators=[Optional(), NumberRange(min=1, max=65535)])
-    # default=True: со снятой галкой сервер заводится не подключённым к VPS
-    # Manager, и подключить его потом нечем — start_onboarding вызывается
-    # только отсюда. Подключение по умолчанию, отказ — осознанный.
-    do_onboarding = BooleanField('Выполнить автоматический онбординг', default=True)  # транзиентное
-    # Без Optional(): он на пустом поле рвёт цепочку через StopValidation, и
-    # validate_bootstrap_password ниже не запускается вовсе. Поле и так
-    # необязательное — обязательным его делает только галка онбординга.
-    bootstrap_password = StringField('Текущий пароль root (ssh) от хостера')  # транзиентное (FIX-5), в БД не хранится; FIX-FORM-PW: прежнее «Пароль для bootstrap» путали с password
 
-    def validate_bootstrap_password(self, field):
-        """Галка без пароля создаёт job, который уже не починить.
+    def validate_password(self, field):
+        """Пустой пароль при заведении создаёт job, который уже не починить.
 
         Пароль лежит в `steps_json` и стирается только после успеха, поэтому
-        «Перезапустить шаг» на карточке вечно повторяет попытку с пустым
+        «Перезапустить шаг» на карточке вечно повторял бы попытку с пустым
         значением, а ввести пароль задним числом негде.
         """
-        if self.do_onboarding.data and not (field.data or '').strip():
+        if self.require_password and not (field.data or '').strip():
             raise ValidationError(
-                'Без пароля root онбординг не выполнится: '
-                'введите его или снимите галку автоматического онбординга',
+                'Введите текущий пароль root от хостера — '
+                'без него автоматический онбординг не выполнится',
             )
 
 
@@ -105,7 +106,3 @@ PASSWORD_FORM_FIELDS = ('password',)
 # Boolean toggle fields. Сервисы (has_exim/has_squid/has_vpn) убраны из
 # inline-toggle в A1 — в A4 будут управляться через карточку сервера.
 INLINE_TOGGLE_FIELDS = {'active': 'active'}
-
-# Транзиентные поля ServerForm (Track C A3): в модель не пишутся, populate_obj
-# должен их исключить (см. views.py::create()).
-TRANSIENT_FORM_FIELDS = ('do_onboarding', 'bootstrap_password')

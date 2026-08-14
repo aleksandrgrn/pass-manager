@@ -155,6 +155,7 @@ class TestCreateLandsInGroup:
         resp = admin_client.post('/servers/new', data={
             'name': 'vps-created-01',
             'ip_address': '198.51.100.5',
+            'password': 'Init-Pass-123!',
             'group_id': str(default_group.id),
         })
         assert resp.status_code == 302
@@ -200,6 +201,7 @@ class TestCreateLandsInGroup:
         resp = superadmin_client.post('/servers/new', data={
             'name': 'vps-orphan-01',
             'ip_address': '198.51.100.6',
+            'password': 'Init-Pass-123!',
             'group_id': '0',
         })
         assert resp.status_code == 302

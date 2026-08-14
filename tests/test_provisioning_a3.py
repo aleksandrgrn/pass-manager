@@ -38,24 +38,8 @@ def _make_user(db, username='onboard-user'):
 # Р4: онбординг — опция, ручное добавление не ломается
 # --------------------------------------------------------------------------- #
 
-class TestOnboardingCheckboxOff:
-    """Чекбокс выключен -> поведение ровно как раньше."""
-
-    def test_create_without_onboarding_no_job_created(self, admin_client, db):
-        resp = admin_client.post('/servers/new', data={
-            'name': 'vps-manual-01',
-            'ip_address': '198.51.100.60',
-        })
-        assert resp.status_code == 302
-
-        server = Server.query.filter_by(name='vps-manual-01').first()
-        assert server is not None
-        assert server.provisioning_status == 'ready'
-        assert ProvisioningJob.query.count() == 0
-
-
-class TestOnboardingCheckboxOn:
-    """Чекбокс включён -> создаётся job, сервер помечен provisioning."""
+class TestOnboardingAlwaysRuns:
+    """Онбординг запускается при каждом заведении сервера."""
 
     def test_create_with_onboarding_creates_job(self, admin_client, db):
         with patch('app.services.provisioning.vps_client.add_server') as mock_add:
@@ -63,8 +47,7 @@ class TestOnboardingCheckboxOn:
             resp = admin_client.post('/servers/new', data={
                 'name': 'vps-auto-01',
                 'ip_address': '198.51.100.70',
-                'do_onboarding': 'y',
-                'bootstrap_password': 'Init-Pass-123!',
+                'password': 'Init-Pass-123!',
             })
 
         # PRG: онбординг редиректит на страницу job'а. Отрисовка страницы прямо
@@ -88,25 +71,24 @@ class TestOnboardingCheckboxOn:
         mock_add.assert_not_called()
 
 
-class TestOnboardingIsTheDefault:
-    """Галка стоит по умолчанию, и без пароля форма не проходит.
+class TestOnboardingHasNoOptOut:
+    """Галки больше нет: онбординг обязателен, и без пароля форма не проходит.
 
-    Со снятой галкой сервер остаётся не подключённым к VPS Manager, а
-    подключить его потом нечем: start_onboarding вызывается только из формы
-    создания. Галка без пароля — тупик другого рода: job создастся и упадёт,
-    а пароль в него уже не подставить.
+    Отказаться от онбординга нельзя — иначе сервер заводится не подключённым к
+    VPS Manager, а подключить его потом нечем: start_onboarding вызывается
+    только из формы создания.
     """
 
-    def test_onboarding_checked_by_default(self, admin_client, db):
+    def test_create_page_has_no_onboarding_checkbox(self, admin_client, db):
         resp = admin_client.get('/servers/new')
         assert resp.status_code == 200
-        assert b'<input checked id="do_onboarding"' in resp.data
+        assert b'do_onboarding' not in resp.data
+        assert b'bootstrap_password' not in resp.data
 
     def test_onboarding_without_password_rejected(self, admin_client, db):
         resp = admin_client.post('/servers/new', data={
             'name': 'vps-no-pw-01',
             'ip_address': '198.51.100.71',
-            'do_onboarding': 'y',
         })
 
         assert resp.status_code == 200  # форма перерисована с ошибкой
