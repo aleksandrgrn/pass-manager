@@ -50,7 +50,7 @@ class TestHeadersAndTransport:
         assert args[1] == "http://127.0.0.1:5000/api/svc/servers/add"
         assert kwargs["headers"]["Authorization"] == "Bearer test-token-xyz"
         assert kwargs["json"]["bootstrap_request_id"] == "req-1"
-        assert kwargs["timeout"] == vps_client.DEFAULT_TIMEOUT
+        assert kwargs["timeout"] == vps_client.ADD_SERVER_TIMEOUT
 
     def test_job_id_sent_as_header_when_provided(self, configured_app):
         with configured_app.app_context(), patch(
@@ -109,6 +109,9 @@ class TestEndpointMapping:
         args, kwargs = mock_req.call_args
         assert args[1].endswith("/keys/deploy")
         assert kwargs["json"] == {"key_id": 1, "server_id": 2}
+        # Длинный таймаут — только у add_server. Остальные вызовы обязаны падать
+        # быстро: они живут внутри веб-запроса, и долгое ожидание съест сторож.
+        assert kwargs["timeout"] == vps_client.DEFAULT_TIMEOUT
 
     def test_revoke_deployment_post(self, configured_app):
         with configured_app.app_context(), patch(
