@@ -18,6 +18,12 @@ from flask import current_app
 
 DEFAULT_TIMEOUT = 30
 
+# add_server ходит на машину три раза подряд (версия sshd, запись ключа, проверка
+# входа по ключу). На здоровой машине это ~6 с, на медленной — 20+ с за заход, и в
+# DEFAULT_TIMEOUT такая машина не укладывается никогда. Поднято только здесь:
+# остальные вызовы быстрые, и долгое ожидание у них съел бы сторож gunicorn.
+ADD_SERVER_TIMEOUT = 90
+
 
 def _headers(job_id: Optional[str] = None) -> Dict[str, str]:
     token = current_app.config.get("VPS_MANAGER_SERVICE_TOKEN", "")
@@ -27,13 +33,19 @@ def _headers(job_id: Optional[str] = None) -> Dict[str, str]:
     return headers
 
 
-def _request(method: str, path: str, job_id: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+def _request(
+    method: str,
+    path: str,
+    job_id: Optional[str] = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    **kwargs: Any,
+) -> Dict[str, Any]:
     base_url = current_app.config.get("VPS_MANAGER_API_URL", "")
     url = f"{base_url}{path}"
 
     try:
         response = requests.request(
-            method, url, headers=_headers(job_id), timeout=DEFAULT_TIMEOUT, **kwargs
+            method, url, headers=_headers(job_id), timeout=timeout, **kwargs
         )
     except requests.exceptions.ConnectionError:
         return {
@@ -95,7 +107,9 @@ def add_server(
     }
     if category_ids is not None:
         payload["category_ids"] = category_ids
-    return _request("POST", "/servers/add", job_id=job_id, json=payload)
+    return _request(
+        "POST", "/servers/add", job_id=job_id, timeout=ADD_SERVER_TIMEOUT, json=payload
+    )
 
 
 def list_keys(name: Optional[str] = None, job_id: Optional[str] = None) -> Dict[str, Any]:

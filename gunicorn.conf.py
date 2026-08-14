@@ -5,7 +5,11 @@ import os
 bind = '127.0.0.1:5001'
 workers = int(os.environ.get('GUNICORN_WORKERS', min(4, multiprocessing.cpu_count() * 2 + 1)))
 threads = int(os.environ.get('GUNICORN_THREADS', 2))
-timeout = 60
+# 120, а не 60: заведение сервера идёт внутри веб-запроса (провижининг, шаг
+# bootstrap), а на медленной машине один этот шаг занимает больше минуты. Сторож
+# обязан быть терпеливее клиента vps_client.ADD_SERVER_TIMEOUT, иначе воркер
+# умрёт первым, а VPS Manager доведёт регистрацию — и машина останется сиротой.
+timeout = 120
 graceful_timeout = 30
 keepalive = 5
 
