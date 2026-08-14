@@ -1,7 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}Выдача доступа — Pass Manager{% endblock %}
 {% block content %}
-<div class="flex flex-col gap-4">
+{# Ширину режем здесь, на обёртке, а не в _grant_all_progress.html: тот кусок
+   HTMX подменяет целиком через hx-swap="outerHTML" на каждом шаге, и класс на
+   нём пришлось бы держать в двух местах. Обёртка при подмене остаётся.
+   max-w-3xl mx-auto — тот же приём, что в servers/form.html. #}
+<div class="flex flex-col gap-4 max-w-3xl mx-auto">
     <h1 class="text-xl font-semibold text-ink">Выдача доступа на все мои серверы</h1>
     <div class="card p-4">
         {% include 'access/_grant_all_progress.html' %}
