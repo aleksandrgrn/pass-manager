@@ -17,7 +17,7 @@ from app.auth.decorators import role_required
 from app.services import vps_client
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
-    INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS, TRANSIENT_FORM_FIELDS,
+    INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
     PASSWORD_FORM_FIELDS,
 )
 from app.services.provisioning import OnboardingLockedError, start_onboarding
@@ -316,6 +316,7 @@ def grant_self(server_id):
 def create():
     """Add a new server. Available to all authenticated users."""
     form = ServerForm()
+    form.require_password = True
     form.group_id.choices = _group_choices()
     if not form.group_id.choices:
         # Р6: возможность заводить серверы — свойство группы. Ни одной подходящей
@@ -323,12 +324,13 @@ def create():
         abort(403, description='Ни одна из ваших групп не может заводить серверы')
 
     if form.validate_on_submit():
-        do_onboarding = form.do_onboarding.data
-        bootstrap_password = form.bootstrap_password.data
-        # Track C A3 (Р4): транзиентные поля не должны попасть в модель через
-        # populate_obj — исключаем их из формы перед вызовом.
-        for field_name in TRANSIENT_FORM_FIELDS:
-            del form[field_name]
+        # Track C A3 (Р4): на заведении «Пароль root» — это текущий пароль от
+        # хостера, то есть вход онбординга, а не значение поля. В модель он не
+        # едет: pipeline держит его зашифрованным в steps_json и стирает после
+        # успешного bootstrap, а servers.password заполнит шаг promote
+        # сгенерированным значением.
+        bootstrap_password = form.password.data
+        del form['password']
 
         server = Server()
         form.populate_obj(server)
@@ -338,17 +340,14 @@ def create():
         db.session.commit()
         flash(f'Сервер «{server.name}» добавлен.', 'success')
 
-        if do_onboarding:
-            try:
-                job = start_onboarding(server, current_user, bootstrap_password)
-            except OnboardingLockedError as exc:
-                # FIX-6c: не должно случаться при создании нового сервера (job
-                # ещё ни одного), но start_onboarding — общая точка входа.
-                flash(str(exc), 'error')
-                return redirect(url_for('servers.detail', server_id=server.id))
-            return redirect(url_for('provisioning.job_page', job_id=job.id))
-
-        return redirect(url_for('servers.list_servers'))
+        try:
+            job = start_onboarding(server, current_user, bootstrap_password)
+        except OnboardingLockedError as exc:
+            # FIX-6c: не должно случаться при создании нового сервера (job
+            # ещё ни одного), но start_onboarding — общая точка входа.
+            flash(str(exc), 'error')
+            return redirect(url_for('servers.detail', server_id=server.id))
+        return redirect(url_for('provisioning.job_page', job_id=job.id))
     return render_template('servers/form.html', form=form, title='Новый сервер',
                            show_onboarding=True)
 
@@ -376,10 +375,6 @@ def edit(server_id):
             del form[field_name]
 
     if form.validate_on_submit():
-        # Онбординг при редактировании не запускается, но транзиентные поля
-        # всё равно исключаем — иначе populate_obj навесит их на модель.
-        for field_name in TRANSIENT_FORM_FIELDS:
-            del form[field_name]
         form.populate_obj(server)
         if server.group_id == NO_GROUP_CHOICE:
             server.group_id = None

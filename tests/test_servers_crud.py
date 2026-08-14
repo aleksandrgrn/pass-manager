@@ -1,10 +1,12 @@
 """Тесты CRUD серверов + пагинация."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.extensions import db
-from app.models import Server
+from app.models import ProvisioningJob, Server
 
 
 # --------------------------------------------------------------------------- #
@@ -39,6 +41,7 @@ class TestCreateServer:
             data={
                 'name': 'new-server-1',
                 'ip_address': '198.51.100.50',
+                'password': 'Init-Pass-123!',
                 'provider': 'Hetzner',
                 'active': 'y',
             },
@@ -61,24 +64,40 @@ class TestCreateServer:
         assert 'Название обязательно' in resp.get_data(as_text=True)
         assert Server.query.count() == before
 
-    def test_create_stores_password_via_hybrid_setter(self, admin_client):
-        """Если в форме указать пароль — он сохраняется через гибридное свойство."""
+    def test_create_password_goes_to_job_not_model(self, admin_client, db):
+        """На заведении пароль — вход онбординга, а не значение поля.
+
+        Р1: в servers.password он не попадает — туда его положит только шаг
+        promote, и уже сгенерированным. Что пароль лежит в steps_json
+        зашифрованным, здесь не проверяется: ENCRYPTION_KEY в тестах пуст
+        намеренно (conftest.py), и шифрования нет ни у кого.
+        """
         admin_client.post(
             '/servers/new',
             data={'name': 'pw-server', 'password': 'abc-secret'},
         )
         srv = Server.query.filter_by(name='pw-server').first()
         assert srv is not None
-        # Гибридное свойство должно вернуть именно plaintext-значение
-        assert srv.password == 'abc-secret'
+        assert srv.password is None
 
-    def test_create_form_shows_both_password_hints(self, admin_client):
-        """FIX-FORM-PW: форма создания отдаёт обе подсказки — под password и
-        под bootstrap_password. Мутация (убрать любую из них) должна валить
-        ровно этот тест."""
+        job = ProvisioningJob.query.filter_by(server_id=srv.id).first()
+        assert job is not None
+        state = json.loads(job.steps_json)
+        assert 'bootstrap_cred' in state
+
+    def test_create_form_shows_password_hint(self, admin_client):
+        """FIX-FORM-ONB: подсказка под единственным полем пароля объясняет, что
+        туда вводят пароль от хостера и что он сменится после онбординга."""
         body = admin_client.get('/servers/new').get_data(as_text=True)
-        assert 'Оставьте пустым, если включён автоматический онбординг — пароль будет сгенерирован и записан сюда сам.' in body
-        assert 'Нужен только для первого подключения. В базе не хранится.' in body
+        assert 'Текущий пароль root от хостера' in body
+        assert 'после онбординга здесь будет новый, сгенерированный' in body
+        assert 'Нужен только для первого подключения' not in body
+
+    def test_create_without_password_shows_error(self, admin_client, db):
+        """Сообщение валидатора должно быть видно на экране, а не только в коде."""
+        resp = admin_client.post('/servers/new', data={'name': 'pw-missing'})
+        assert resp.status_code == 200
+        assert 'Введите текущий пароль root от хостера' in resp.get_data(as_text=True)
 
 
 # --------------------------------------------------------------------------- #

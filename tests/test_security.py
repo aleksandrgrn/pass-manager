@@ -234,7 +234,11 @@ class TestCSRFProtection:
 
         resp = client.post(
             '/servers/new',
-            data={'name': 'csrf-ok-server', 'csrf_token': token},
+            data={
+                'name': 'csrf-ok-server',
+                'password': 'Init-Pass-123!',
+                'csrf_token': token,
+            },
         )
         # С корректным токеном форма принимается → 302 (создан и редирект)
         assert resp.status_code == 302

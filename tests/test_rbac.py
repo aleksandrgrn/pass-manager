@@ -173,6 +173,7 @@ class TestRbacOnMutatingEndpoints:
     def test_admin_can_create_server(self, admin_client):
         resp = admin_client.post('/servers/new', data={
             'name': 'new-prod-01', 'ip_address': '192.0.2.50',
+            'password': 'Init-Pass-123!',
         })
         assert resp.status_code == 302
 
@@ -209,6 +210,7 @@ class TestRbacOnMutatingEndpoints:
     def test_superadmin_can_create_server(self, superadmin_client):
         resp = superadmin_client.post('/servers/new', data={
             'name': 'new-prod-02', 'ip_address': '192.0.2.51',
+            'password': 'Init-Pass-123!',
         })
         assert resp.status_code == 302
 
@@ -540,8 +542,9 @@ class TestEditFormMask:
     URL = '/servers/{id}/edit'
 
     def test_edit_fields_have_password_type(self, superadmin_client, sample_server):
-        """На странице правки суперадмин видит четыре password-инпута
-        (bootstrap_password тут не рендерится — show_onboarding=False)."""
+        """На странице правки суперадмин видит четыре password-инпута.
+
+        Второго поля пароля на странице больше нет — оно удалено вместе с галкой."""
         body = superadmin_client.get(
             self.URL.format(id=sample_server.id)
         ).get_data(as_text=True)
@@ -549,10 +552,11 @@ class TestEditFormMask:
             assert f'name="{field}" type="password"' in body, \
                 f'{field} не закрыт шторкой в форме правки'
 
-    def test_bootstrap_password_has_password_type_on_create(self, superadmin_client):
-        """Пятое поле (bootstrap) живёт на странице создания, где show_onboarding=True."""
+    def test_password_has_password_type_on_create(self, superadmin_client):
+        """На странице создания «Пароль root» тоже закрыт шторкой: туда вводят
+        текущий пароль от хостера."""
         body = superadmin_client.get('/servers/new').get_data(as_text=True)
-        assert 'name="bootstrap_password" type="password"' in body
+        assert 'name="password" type="password"' in body
 
     def test_edit_roundtrips_passwords_without_clearing(self, superadmin_client, sample_server, db):
         """Главный тест: submit формы теми же значениями не трёт пароли.
@@ -584,3 +588,33 @@ class TestEditFormMask:
         db.session.refresh(sample_server)
         assert sample_server.password == 's3cret-root-pass'
         assert sample_server.provider_password == 'prov-pass-123'
+
+    def test_edit_saves_server_without_password(self, superadmin_client, db, default_group):
+        """Пароль обязателен только при заведении — в форме правки нет.
+
+        У части импортированных из MySQL записей root-пароля нет вовсе (в
+        прогоне C1 по парку таких нашлось шесть). Стань validate_password
+        безусловным — суперадмин перестал бы сохранять такие серверы, а
+        остальной набор этого не заметил бы.
+        """
+        from app.models import Server
+        server = Server(
+            group_id=default_group.id,
+            name='vps-no-pw-01',
+            ip_address='192.0.2.99',
+            active=True,
+        )
+        db.session.add(server)
+        db.session.commit()
+
+        resp = superadmin_client.post(self.URL.format(id=server.id), data={
+            'name': 'vps-no-pw-01-renamed',
+            'group_id': server.group_id,
+            'ip_address': '192.0.2.99',
+            'ssh_username': 'root',
+            'ssh_port': '22',
+        })
+        assert resp.status_code == 302
+        db.session.refresh(server)
+        assert server.name == 'vps-no-pw-01-renamed'
+        assert server.password is None
