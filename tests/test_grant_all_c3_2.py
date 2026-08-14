@@ -88,6 +88,34 @@ def test_grant_all_skips_server_with_existing_access(app, db, admin_client, admi
     deploy_key.assert_called_once()
 
 
+def test_grant_all_skips_archived_server(app, db, admin_client, default_group):
+    """Архивные записи в очередь не попадают.
+
+    Архивный создаётся первым и получает меньший id: выборка идёт
+    `order_by(Server.id)`, поэтому без фильтра он был бы взят раньше живого и
+    тест упал бы на первом же шаге, а не пропустил проверку молча.
+
+    На боевом парке таких записей 194 против 12 живых, и каждая стоила
+    отдельного круга опроса.
+    """
+    archived = _server(db, default_group, 'srv-archived')
+    archived.active = False
+    db.session.commit()
+    live = _server(db, default_group, 'srv-live')
+
+    admin_client.post('/access/grant-self/all')
+    job = ProvisioningJob.query.one()
+
+    with patch('app.servers.views.vps_client.generate_key', return_value={'success': True, 'id': 7}), \
+            patch('app.servers.views.vps_client.deploy_key', return_value={'success': True}):
+        admin_client.post(f'/access/grant-self/all/{job.id}/step')
+
+    db.session.refresh(job)
+    assert job.status == 'success'
+    results = json.loads(job.steps_json)['results']
+    assert [r['server_id'] for r in results] == [live.id]
+
+
 def test_grant_all_records_failure_without_looping_forever(app, db, admin_client, default_group):
     _server(db, default_group, 'srv-bad')
 
