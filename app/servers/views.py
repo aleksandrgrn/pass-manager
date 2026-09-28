@@ -1,7 +1,11 @@
 """Server CRUD + HTMX endpoints."""
+import json
+import os
+from contextlib import closing
+
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
-    jsonify, current_app, abort
+    jsonify, current_app, abort, Response
 )
 from flask_login import login_required, current_user
 from sqlalchemy import or_
@@ -14,7 +18,7 @@ from app.models import (
 )
 from app.access.rules import assert_can_access_server, visible_servers, can_self_grant
 from app.auth.decorators import role_required
-from app.services import vps_client
+from app.services import netcheck, vps_client
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
@@ -308,6 +312,57 @@ def grant_self(server_id):
         return _row()
     flash('Доступ выдан. Ключ можно скачать во вкладке «Доступ».', 'success')
     return redirect(url_for('servers.detail', server_id=server.id))
+
+
+@servers_bp.app_template_global()
+def netcheck_ip(value):
+    """Для шаблона строки: та же проверка IP, что и в маршруте, — иначе кнопка
+    активна у «—» или имени хоста в поле IP, а маршрут ответит 400."""
+    return netcheck.parse_ip(value)
+
+
+@servers_bp.route('/<int:server_id>/netcheck/<tool>', methods=['POST'])
+@login_required
+def netcheck_run(server_id, tool):
+    """Ping или traceroute до сервера: NDJSON — строки вывода, в конце сводка."""
+    server = _get_server_or_403(server_id)
+    if tool not in netcheck.TOOLS:
+        abort(404)
+    ip = netcheck.parse_ip(server.ip_address)
+    if ip is None:
+        return 'У сервера нет корректного IP.', 400
+
+    lock_dir = current_app.config.get('NETCHECK_LOCK_DIR') or os.path.join(
+        current_app.instance_path, 'netcheck-locks')
+    try:
+        slots = netcheck.Slots(lock_dir, current_user.id)
+    except netcheck.BusyError as e:
+        return str(e), 429
+
+    current_app.logger.info('netcheck user=%s server=%s ip=%s tool=%s',
+                            current_user.username, server.id, ip, tool)
+    argv = netcheck.build_command(tool, ip)
+    timeout = netcheck.TIMEOUTS[tool]
+
+    def _stream():
+        lines = []
+        # closing — чтобы при обрыве клиента процесс убил finally в run(),
+        # а не сборщик мусора когда-нибудь потом.
+        with closing(netcheck.run(argv, timeout)) as output:
+            for line in output:
+                lines.append(line)
+                yield json.dumps({'line': line}, ensure_ascii=False) + '\n'
+        summary = netcheck.summarize(tool, str(ip), lines)
+        yield json.dumps({'summary': summary}, ensure_ascii=False) + '\n'
+
+    response = Response(_stream(), mimetype='application/x-ndjson')
+    # Слот снимается, когда ответ закрыт, — и после полного стрима, и после
+    # обрыва клиента; сам генератор до своего finally может и не дойти.
+    response.call_on_close(slots.release)
+    # Без этого nginx копит ответ и отдаёт его целиком — построчность пропадёт.
+    response.headers['X-Accel-Buffering'] = 'no'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
 
 
 @servers_bp.route('/new', methods=['GET', 'POST'])

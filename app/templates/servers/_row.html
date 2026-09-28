@@ -88,6 +88,17 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="4"/><path d="M10 12h11"/><path d="M17 12v3.5"/><path d="M20.5 12v2.5"/></svg>
         </span>
         {% endif %}
+            <button type="button" class="icon-btn"
+                    {% if netcheck_ip(server.ip_address) %}
+                    data-netcheck-url="{{ url_for('servers.netcheck_run', server_id=server.id, tool='TOOL') }}"
+                    data-netcheck-name="{{ server.name }}" data-netcheck-ip="{{ server.ip_address }}"
+                    title="Проверить сеть" aria-label="Проверить сеть {{ server.name }}"
+                    {% else %}
+                    disabled style="opacity: .3; cursor: default"
+                    title="У сервера нет корректного IP" aria-label="У {{ server.name }} нет корректного IP"
+                    {% endif %}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </button>
             <a href="{{ url_for('servers.detail', server_id=server.id) }}"
                class="icon-btn" aria-label="Детали {{ server.name }}" title="Детали">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>

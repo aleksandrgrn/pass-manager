@@ -87,4 +87,121 @@
     </nav>
     {% endif %}
 </div>
+
+<style>
+  .nc-summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
+                margin-bottom: 10px; font-size: 14px; font-weight: 500; }
+  .nc-summary.ok   { background: var(--success-weak); color: var(--success); }
+  .nc-summary.warn { background: var(--warning-weak); color: var(--warning); }
+  .nc-summary.bad  { background: var(--danger-weak);  color: var(--danger); }
+  .nc-summary .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
+  .nc-summary small { font-size: 13px; font-weight: 400; opacity: .85; }
+  .nc-out { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45;
+            max-height: 22rem; overflow: auto; white-space: pre; }
+  .nc-status { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; padding: 6px 2px 10px; }
+  .nc-spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent);
+                border-radius: 50%; animation: nc-spin .8s linear infinite; }
+  @keyframes nc-spin { to { transform: rotate(360deg); } }
+</style>
+<dialog id="netcheck" class="intro" aria-labelledby="netcheck-title">
+    <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+            <h2 id="netcheck-title" style="margin-bottom: 2px"></h2>
+            <div id="netcheck-ip" class="text-xs text-muted font-mono"></div>
+        </div>
+        <form method="dialog"><button class="btn ghost" aria-label="Закрыть">✕</button></form>
+    </div>
+    <div class="flex gap-2 mb-3">
+        <button type="button" class="btn secondary" data-netcheck-tool="ping">Ping</button>
+        <button type="button" class="btn secondary" data-netcheck-tool="traceroute">Traceroute</button>
+    </div>
+    <div id="netcheck-result" class="text-sm text-faint">Выберите проверку.</div>
+    <p class="text-xs text-faint" style="margin: 12px 0 0">Проверка идёт с сервера Pass Manager, а не с вашего компьютера.</p>
+</dialog>
+<script>
+  (function(){
+    var dlg = document.getElementById('netcheck');
+    var result = document.getElementById('netcheck-result');
+    var toolButtons = dlg.querySelectorAll('[data-netcheck-tool]');
+    var urlTemplate = null, controller = null;
+
+    function setBusy(busy) { toolButtons.forEach(function(b){ b.disabled = busy; }); }
+    function stop() { if (controller) { controller.abort(); controller = null; } setBusy(false); }
+    function el(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    }
+
+    // Строки списка перерисовывает HTMX, поэтому слушаем документ, а не кнопки.
+    document.addEventListener('click', function(e){
+      var btn = e.target.closest('[data-netcheck-url]');
+      if (!btn) return;
+      urlTemplate = btn.dataset.netcheckUrl;
+      document.getElementById('netcheck-title').textContent = 'Проверка сети: ' + btn.dataset.netcheckName;
+      document.getElementById('netcheck-ip').textContent = btn.dataset.netcheckIp;
+      result.className = 'text-sm text-faint';
+      result.textContent = 'Выберите проверку.';
+      dlg.showModal();
+    });
+    // Закрыли окно посреди проверки — обрываем запрос, сервер убьёт процесс.
+    dlg.addEventListener('close', stop);
+
+    toolButtons.forEach(function(b){ b.addEventListener('click', function(){ run(b.dataset.netcheckTool); }); });
+
+    async function run(tool) {
+      stop();
+      setBusy(true);
+      controller = new AbortController();
+      var signal = controller.signal;
+      result.className = '';
+      result.replaceChildren();
+      var status = el('div', 'nc-status');
+      status.append(el('div', 'nc-spinner'), el('span', null, (tool === 'ping' ? 'Ping' : 'Traceroute') + ' идёт…'));
+      var out = el('div', 'nc-out');
+      result.append(status, out);
+      try {
+        var resp = await fetch(urlTemplate.replace('TOOL', tool), {
+          method: 'POST', signal: signal,
+          headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content},
+        });
+        if (!resp.ok) {
+          var msg = resp.status === 403 ? 'Нет доступа к серверу.' : (await resp.text()).trim();
+          status.replaceChildren(el('span', null, msg || ('Ошибка ' + resp.status)));
+          out.remove();
+          return;
+        }
+        var reader = resp.body.getReader(), decoder = new TextDecoder(), buf = '';
+        for (;;) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, {stream: true});
+          var parts = buf.split('\n');
+          buf = parts.pop();
+          parts.forEach(function(p){
+            if (!p) return;
+            var msg = JSON.parse(p);
+            if (msg.line !== undefined) {
+              out.textContent += msg.line + '\n';
+              out.scrollTop = out.scrollHeight;
+            } else if (msg.summary) {
+              var s = el('div', 'nc-summary ' + msg.summary.level);
+              var t = el('span', null, msg.summary.title + ' ');
+              t.append(el('small', null, '· ' + msg.summary.detail));
+              s.append(el('span', 'dot'), t);
+              status.replaceWith(s);
+            }
+          });
+        }
+        if (status.isConnected) status.replaceChildren(el('span', null, 'Проверка оборвалась, сводки нет.'));
+      } catch (err) {
+        if (!signal.aborted) status.replaceChildren(el('span', null, 'Проверка оборвалась: ' + err.message));
+      } finally {
+        if (controller && controller.signal === signal) { controller = null; setBusy(false); }
+      }
+    }
+  })();
+</script>
 {% endblock %}
