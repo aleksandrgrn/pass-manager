@@ -42,12 +42,14 @@ def _apply_filters(query, form):
     """Apply search/active filters to query."""
     q = form.q.data
     if q:
-        like = f'%{q}%'
+        # % и _ из запроса — буквальные символы, а не шаблон LIKE
+        escaped = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        like = f'%{escaped}%'
         query = query.filter(or_(
-            Server.name.ilike(like),
-            Server.ip_address.ilike(like),
-            Server.provider.ilike(like),
-            Server.notes.ilike(like),
+            Server.name.ilike(like, escape='\\'),
+            Server.ip_address.ilike(like, escape='\\'),
+            Server.provider.ilike(like, escape='\\'),
+            Server.notes.ilike(like, escape='\\'),
         ))
     # Неактуальные (в старой системе — тире в начале имени, таких 182 из 401)
     # прячем из обычного просмотра, но не из поиска: пустой экран в ответ на

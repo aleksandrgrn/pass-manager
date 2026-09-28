@@ -294,6 +294,17 @@ class TestInactiveVisibility:
         assert 'Почтовый-Релей-Relay-01' in body
         assert sample_server.name not in body
 
+    @pytest.mark.parametrize('q', ['_', '%', 'mail_01', '50%'])
+    def test_search_treats_wildcards_literally(self, admin_client, db, default_group,
+                                               sample_server, q):
+        """% и _ в запросе — обычные символы, а не шаблон LIKE «что угодно»."""
+        db.session.add(Server(group_id=default_group.id, name='mail_01 50%',
+                              ip_address='192.0.2.97'))
+        db.session.commit()
+        body = admin_client.get('/servers/', query_string={'q': q}).get_data(as_text=True)
+        assert 'mail_01 50%' in body
+        assert sample_server.name not in body
+
     def test_checkbox_shows_inactive(self, admin_client, inactive_server):
         body = admin_client.get('/servers/?show_inactive=y').get_data(as_text=True)
         assert 'old-mail-relay' in body
