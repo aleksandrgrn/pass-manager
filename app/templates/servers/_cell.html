@@ -13,3 +13,4 @@
 {% else %}
 <span class="text-faint">—</span>
 {% endif %}
+{% if field == 'ip_address' %}{% with oob = true %}{% include 'servers/_netcheck_btn.html' %}{% endwith %}{% endif %}

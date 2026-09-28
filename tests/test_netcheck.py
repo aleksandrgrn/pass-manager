@@ -202,3 +202,19 @@ def test_client_leaving_kills_process(admin_client, sample_server, lock_dir, mon
     resp.close()
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
+
+
+def test_inline_ip_edit_refreshes_netcheck_button(admin_client, sample_server, db):
+    """Кнопка в строке следует за IP, изменённым inline, без перезагрузки страницы."""
+    sample_server.ip_address = None
+    db.session.commit()
+    html = admin_client.post(f'/servers/{sample_server.id}/field',
+                             data={'field': 'ip_address', 'value': '192.0.2.7'}).get_data(as_text=True)
+    assert f'id="netcheck-btn-{sample_server.id}" hx-swap-oob="true"' in html
+    assert 'data-netcheck-ip="192.0.2.7"' in html
+
+
+def test_inline_edit_of_other_field_leaves_button_alone(admin_client, sample_server):
+    html = admin_client.post(f'/servers/{sample_server.id}/field',
+                             data={'field': 'name', 'value': 'renamed'}).get_data(as_text=True)
+    assert 'netcheck-btn' not in html
