@@ -283,6 +283,17 @@ class TestInactiveVisibility:
         body = admin_client.get('/servers/?q=mail-relay').get_data(as_text=True)
         assert 'old-mail-relay' in body
 
+    @pytest.mark.parametrize('q', ['почтовый', 'РЕЛЕЙ', 'ПоЧтОвЫй-рЕлЕй', 'Relay-01', 'relay-01'])
+    def test_search_ignores_case(self, admin_client, db, default_group, sample_server, q):
+        """Встроенный lower() в SQLite не знает кириллицу — ilike молча
+        становился регистрозависимым для русских имён."""
+        db.session.add(Server(group_id=default_group.id, name='Почтовый-Релей-Relay-01',
+                              ip_address='192.0.2.98'))
+        db.session.commit()
+        body = admin_client.get(f'/servers/?q={q}').get_data(as_text=True)
+        assert 'Почтовый-Релей-Relay-01' in body
+        assert sample_server.name not in body
+
     def test_checkbox_shows_inactive(self, admin_client, inactive_server):
         body = admin_client.get('/servers/?show_inactive=y').get_data(as_text=True)
         assert 'old-mail-relay' in body

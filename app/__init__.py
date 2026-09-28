@@ -17,6 +17,12 @@ from app.extensions import db, login_manager, csrf
 def _set_sqlite_wal_mode(dbapi_connection, connection_record):
     if isinstance(dbapi_connection, sqlite3.Connection):
         dbapi_connection.execute('PRAGMA journal_mode=WAL')
+        # Встроенный lower() в SQLite понимает только ASCII, и ilike (он же
+        # lower(x) LIKE lower(y)) был регистрозависимым для кириллицы.
+        dbapi_connection.create_function(
+            'lower', 1, lambda s: s.lower() if isinstance(s, str) else s,
+            deterministic=True,
+        )
 
 
 _INSECURE_SECRET_KEYS = frozenset({
