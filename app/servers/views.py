@@ -5,11 +5,10 @@ from contextlib import closing
 
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
-    jsonify, current_app, abort, Response
+    current_app, abort, Response
 )
 from flask_login import login_required, current_user
 from sqlalchemy import or_
-from sqlalchemy.orm import joinedload
 
 from app.extensions import db
 from app.models import (
