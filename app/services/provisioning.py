@@ -88,9 +88,9 @@ def run_next_step(job: ProvisioningJob) -> Dict[str, str]:
 
     FIX-6c: гонка двух одновременных поллингов. Шаг помечается 'running' и
     коммитится ДО исполнения; если он уже 'running' (другой поллинг успел
-    первым), выходим без повторного запуска. Каждый обработчик шага всегда
-    завершает его в 'done'/'failed' (см. _STEP_HANDLERS), поэтому 'running'
-    не залипает.
+    первым), выходим без повторного запуска. Каждый обработчик шага
+    завершает его в 'done'/'failed' (см. _STEP_HANDLERS), а исключение
+    обработчика переводит шаг в 'failed', поэтому 'running' не залипает.
     """
     state = json.loads(job.steps_json) if job.steps_json else {'steps': {}}
     steps_state = state.setdefault('steps', {})
@@ -112,7 +112,22 @@ def run_next_step(job: ProvisioningJob) -> Dict[str, str]:
             # одновременной записи. Апгрейд при необходимости: атомарный
             # UPDATE steps_json ... WHERE status != 'running' (compare-and-swap).
 
-            _STEP_HANDLERS[next_step](job, state)
+            try:
+                _STEP_HANDLERS[next_step](job, state)
+            except Exception as exc:
+                # Необработанное исключение (прод 07-11.09: PermissionError на
+                # каталоге ключей) оставляло шаг в 'running' — поллинг выходит,
+                # job висит навсегда. Закрываем как failed, дальше — restart.
+                # rollback первым: после упавшего flush чтение ORM-атрибутов
+                # (даже job.id) бросает PendingRollbackError.
+                db.session.rollback()
+                current_app.logger.exception(
+                    'provisioning job %s: шаг %s упал', job.id, next_step,
+                )
+                job.status = 'failed'
+                job.error_message = f'{next_step}_failed: {exc}'
+                db.session.get(Server, job.server_id).provisioning_status = 'provisioning_failed'
+                steps_state[next_step] = 'failed'
             job.steps_json = json.dumps(state)
             db.session.commit()
 

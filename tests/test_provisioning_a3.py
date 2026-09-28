@@ -275,6 +275,61 @@ class TestFetchKeyStep:
         assert server.provisioning_status == 'provisioning_failed'
         assert 'key_fetch_failed' in job.error_message
 
+    def test_fetch_key_exception_fails_job_and_restart_recovers(self, app, db, tmp_path):
+        """Прод 07-11.09: каталог ключей не создаётся (PermissionError).
+
+        Исключение оставляло шаг в 'running' — job висел навсегда. Теперь job
+        падает в failed, а restart после починки каталога доводит pipeline.
+        """
+        app.config['ANSIBLE_KEYS_DIR'] = str(tmp_path / 'keys')
+        user = _make_user(db, 'u-fetch-exc')
+        server = _make_server(db, name='vps-fetch-exc-01')
+        job = start_onboarding(server, user, 'pw')
+
+        with patch('app.services.provisioning.vps_client.add_server') as mock_add, \
+                patch('app.services.provisioning.vps_client.get_access_key') as mock_key:
+            mock_add.return_value = {'success': True, 'server_id': 902}
+            mock_key.return_value = {'success': True, 'private_key': 'PEM-DATA'}
+            run_next_step(job)  # catalog
+            run_next_step(job)  # bootstrap
+            with patch('app.services.provisioning.os.makedirs',
+                       side_effect=PermissionError(13, 'Permission denied')):
+                steps = run_next_step(job)  # fetch_key -> exception
+
+            db.session.refresh(server)
+            db.session.refresh(job)
+            assert steps['fetch_key'] == 'failed'
+            assert job.status == 'failed'
+            assert server.provisioning_status == 'provisioning_failed'
+            assert 'fetch_key_failed' in job.error_message
+
+            restart_job(job)
+            run_next_step(job)  # fetch_key
+
+        assert (tmp_path / 'keys' / f'{server.id}_root.pem').read_text() == 'PEM-DATA'
+        assert json.loads(job.steps_json)['steps']['fetch_key'] == 'done'
+
+    def test_commit_failure_inside_step_still_fails_job(self, app, db, tmp_path):
+        """Падение flush внутри шага делает сессию неактивной: обработчик
+        исключения не должен читать ORM-атрибуты до rollback, иначе сам упадёт
+        и шаг снова залипнет в 'running'."""
+        server, job = _run_to_rotate(app, db, tmp_path, 'vps-flush-fail-01')
+
+        def broken_password():
+            # Невалидная запись (NOT NULL) — write-ahead commit шага rotate упадёт на flush.
+            db.session.add(ProvisioningJob(job_type='onboarding'))
+            return 'New-Pass-1!'
+
+        with patch('app.services.provisioning.generate_password', side_effect=broken_password):
+            steps = run_next_step(job)
+
+        db.session.refresh(job)
+        db.session.refresh(server)
+        assert steps['rotate'] == 'failed'
+        assert job.status == 'failed'
+        assert server.provisioning_status == 'provisioning_failed'
+        assert server.password_pending is None
+
 
 def _run_to_rotate(app, db, tmp_path, server_name):
     """Доводит job до шага rotate (catalog+bootstrap+fetch_key уже пройдены)."""
