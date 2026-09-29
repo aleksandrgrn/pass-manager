@@ -160,3 +160,16 @@ def test_row_keeps_key_icon_after_toggle(
 
     assert response.status_code == 200
     assert 'title="Доступ выдан"' in response.get_data(as_text=True)
+
+
+def test_netcheck_button_comes_before_grant_button(
+    app, db, admin_client, sample_server,
+):
+    sample_server.vps_manager_server_id = 42
+    db.session.commit()
+
+    body = admin_client.get('/servers/').get_data(as_text=True)
+
+    netcheck = body.index(f'id="netcheck-btn-{sample_server.id}"')
+    grant = body.index(f'hx-post="/servers/{sample_server.id}/grant-self"')
+    assert netcheck < grant
