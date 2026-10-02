@@ -59,17 +59,23 @@ def _load_key(text: str) -> paramiko.PKey:
 
 
 @contextmanager
-def connect(host: str, port: int, username: str, private_key: str):
+def connect(host: str, port: int, username: str, private_key: str, spent: float = 0):
     """SFTP-сессия по сервисному ключу сервера.
 
     AutoAddPolicy — как в ротации пароля: отпечатков у приложения нет, риск
     подмены хоста в сети принят (решение Р9).
+
+    `spent` — сколько секунд общего срока уже ушло до подключения (получение
+    ключа): срок один на весь запрос, а не только на SSH.
     """
+    budget = SESSION_TIMEOUT - spent
+    if budget <= 0:
+        raise _timed_out()
     pkey = _load_key(private_key)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    # Общий срок на всю сессию — подключение и операции вместе. Таймауты
+    # Общий срок на весь запрос — получение ключа, подключение и операции. Таймауты
     # paramiko его не дают: ответа на запрос подсистемы он ждёт без таймаута
     # вовсе, а таймаут канала считается на каждое чтение, и сервер, цедящий
     # данные по капле, держал бы воркер часами. По истечении срока соединение
@@ -80,7 +86,7 @@ def connect(host: str, port: int, username: str, private_key: str):
         expired.set()
         client.close()
 
-    watchdog = threading.Timer(SESSION_TIMEOUT, _expire)
+    watchdog = threading.Timer(budget, _expire)
     watchdog.daemon = True
     watchdog.start()
     try:

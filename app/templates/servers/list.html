@@ -274,19 +274,20 @@
       finally { if (!stale()) { dlg.classList.remove('fl-busy'); body.inert = false; } }
     }
     // Ответ маршрута: при успехе вернёт его как есть, при отказе покажет причину.
-    async function ok(resp) {
+    async function ok(resp, stale) {
       if (resp.redirected) { location.reload(); return false; }  // сессия истекла
       if (resp.ok) return true;
       var plain = (resp.headers.get('Content-Type') || '').indexOf('text/plain') === 0;
       var text = plain ? (await resp.text()).trim()
                : resp.status === 413 ? 'Файл слишком большой.' : '';
+      if (stale()) return false;  // пока читали ответ, окно открыли заново
       say(text || ('Ошибка ' + resp.status), 'bad');
       return false;
     }
     function open(path) {
       return busy('Читаю каталог…', async function(stale){
         var resp = await fetch(base + (path == null ? '' : '?path=' + encodeURIComponent(path)));
-        if (stale() || !await ok(resp)) return;
+        if (stale() || !await ok(resp, stale)) return;
         var html = await resp.text();
         if (stale()) return;
         body.innerHTML = html;
@@ -296,7 +297,7 @@
     function download(path, name) {
       return busy('Скачиваю…', async function(stale){
         var resp = await fetch(base + '/download?path=' + encodeURIComponent(path));
-        if (stale() || !await ok(resp)) return;
+        if (stale() || !await ok(resp, stale)) return;
         var blob = await resp.blob();
         if (stale()) return;
         var a = document.createElement('a');
@@ -333,7 +334,7 @@
           }
           return;
         }
-        if (!await ok(resp)) return;
+        if (!await ok(resp, stale)) return;
         var html = await resp.text();
         if (stale()) return;
         body.innerHTML = html;

@@ -3,6 +3,7 @@ import io
 import json
 import os
 import posixpath
+import time
 from contextlib import closing, contextmanager
 
 from flask import (
@@ -404,6 +405,7 @@ def _files_error(server, action, path, exc):
 def _files_session(server):
     """SFTP-сессия на сервер. Ключ берётся у VPS Manager на каждую операцию и
     живёт только в памяти: нет секрета в покое и нет устаревших копий."""
+    started = time.monotonic()
     resp = vps_client.get_access_key(server.vps_manager_server_id)
     if not resp.get('success') or not resp.get('private_key'):
         raise sftp.SftpError(
@@ -412,7 +414,8 @@ def _files_session(server):
     if not server.ip_address:
         raise sftp.SftpError('У сервера не указан IP.', 400)
     with sftp.connect(server.ip_address, server.ssh_port or 22,
-                      server.ssh_username, resp['private_key']) as session:
+                      server.ssh_username, resp['private_key'],
+                      spent=time.monotonic() - started) as session:
         yield session
 
 

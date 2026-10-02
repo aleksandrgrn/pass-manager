@@ -457,6 +457,21 @@ def test_slow_server_is_cut_off_by_session_deadline(admin_client, server, grante
     assert _logs()[0].result == 'error'
 
 
+def test_slow_key_fetch_counts_against_the_deadline(admin_client, server, granted, service_key,
+                                                    monkeypatch):
+    # Срок один на весь запрос: время, ушедшее на ключ, из него вычитается.
+    monkeypatch.setattr(sftp, 'SESSION_TIMEOUT', 1)
+
+    def _slow_key(server_id):
+        time.sleep(1.2)
+        return {'success': True, 'private_key': service_key}
+
+    with patch('app.servers.views.vps_client.get_access_key', side_effect=_slow_key):
+        resp = _list(admin_client, server)
+    assert resp.status_code == 504
+    assert _logs()[0].result == 'error'
+
+
 def test_temp_file_is_never_world_readable(server, vps, service_key):
     # Временный файл лежит в каталоге 0700 — постороннему до него не добраться.
     seen = []
