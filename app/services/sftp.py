@@ -20,6 +20,9 @@ import paramiko
 # Таймауты обязательны — иначе повисший SSH держит воркер gunicorn.
 CONNECT_TIMEOUT = 30
 OP_TIMEOUT = 30
+# Меньше 60 с, после которых nginx сам ответит 504: человек не должен увидеть
+# отказ, пока операция на сервере ещё идёт.
+SESSION_TIMEOUT = 50
 
 # Окно — для ключей служб, сертификатов и конфигов, не для дампов.
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -39,6 +42,10 @@ class SftpError(Exception):
 
 def _too_large() -> SftpError:
     return SftpError(f'Файл больше {MAX_FILE_SIZE // (1024 * 1024)} МБ — через это окно не передаётся.', 413)
+
+
+def _timed_out() -> SftpError:
+    return SftpError(f'Сервер не уложился в {SESSION_TIMEOUT} с — операция прервана.', 504)
 
 
 def _load_key(text: str) -> paramiko.PKey:
@@ -61,6 +68,21 @@ def connect(host: str, port: int, username: str, private_key: str):
     pkey = _load_key(private_key)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    # Общий срок на всю сессию — подключение и операции вместе. Таймауты
+    # paramiko его не дают: ответа на запрос подсистемы он ждёт без таймаута
+    # вовсе, а таймаут канала считается на каждое чтение, и сервер, цедящий
+    # данные по капле, держал бы воркер часами. По истечении срока соединение
+    # закрывается, и застрявший вызов падает.
+    expired = threading.Event()
+
+    def _expire():
+        expired.set()
+        client.close()
+
+    watchdog = threading.Timer(SESSION_TIMEOUT, _expire)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         try:
             client.connect(
@@ -77,25 +99,25 @@ def connect(host: str, port: int, username: str, private_key: str):
                 look_for_keys=False,
             )
             # Не client.open_sftp(): он согласует версию SFTP на канале без
-            # таймаута. А ответа на запрос подсистемы paramiko ждёт без таймаута
-            # вовсе, поэтому открытие сторожит таймер: сервер, промолчавший после
-            # входа, получает закрытое соединение, а не воркер навечно.
-            watchdog = threading.Timer(CONNECT_TIMEOUT, client.close)
-            watchdog.daemon = True
-            watchdog.start()
-            try:
-                channel = client.get_transport().open_session(timeout=CONNECT_TIMEOUT)
-                channel.settimeout(OP_TIMEOUT)
-                channel.invoke_subsystem('sftp')
-                session = paramiko.SFTPClient(channel)
-            finally:
-                watchdog.cancel()
+            # таймаута.
+            channel = client.get_transport().open_session(timeout=CONNECT_TIMEOUT)
+            channel.settimeout(OP_TIMEOUT)
+            channel.invoke_subsystem('sftp')
+            session = paramiko.SFTPClient(channel)
         except paramiko.AuthenticationException:
             raise SftpError('Сервер не принял сервисный ключ.')
         except (paramiko.SSHException, OSError, EOFError) as e:
+            if expired.is_set():
+                raise _timed_out()
             raise SftpError(f'Не удалось подключиться к серверу: {e}')
-        yield session
+        try:
+            yield session
+        except SftpError:
+            if expired.is_set():
+                raise _timed_out()
+            raise
     finally:
+        watchdog.cancel()
         client.close()
 
 
@@ -207,7 +229,7 @@ def write_file(session, directory: str, filename: str, data: bytes, overwrite: b
     Без `overwrite` существующий файл не трогается никогда — даже если он
     появился, пока шла запись.
 
-    Запись идёт во временное имя рядом и переименованием встаёт на место:
+    Запись идёт во временный файл рядом и переименованием встаёт на место:
     обрыв связи не оставит на сервере половину конфига. Новый файл получает
     0644; при перезаписи права и владелец прежнего файла сохраняются, а ссылка
     остаётся ссылкой — меняется файл, на который она смотрит (так ведёт себя
@@ -239,16 +261,19 @@ def write_file(session, directory: str, filename: str, data: bytes, overwrite: b
                 raise SftpError('Файл с таким именем уже есть.', 409)
             target = session.normalize(target)
 
-        # Имя короткое и от имени файла не зависит: иначе файл с именем под
-        # предел в 255 байт не загрузился бы.
-        tmp = posixpath.join(posixpath.dirname(target), f'.pm-upload-{secrets.token_hex(8)}')
+        # Временный файл живёт в своём каталоге с правами 0700. SFTP создаёт
+        # файл с правами по umask (обычно 0644), и chmod следом опоздал бы:
+        # кто успел открыть файл, прочтёт и то, что в него запишут позже.
+        # В закрытый каталог посторонний не войдёт вовсе. Имя короткое и от
+        # имени файла не зависит: иначе файл с именем под предел в 255 байт
+        # не загрузился бы.
+        tmpdir = posixpath.join(posixpath.dirname(target), f'.pm-upload-{secrets.token_hex(8)}')
+        tmp = posixpath.join(tmpdir, 'file')
         created = False
         try:
+            session.mkdir(tmpdir, 0o700)  # занятое имя — отказ, чужое не трогаем
+            created = True
             with session.open(tmp, 'wx') as f:
-                created = True
-                # Сначала закрыть от чужих глаз, потом писать: содержимое файла
-                # с правами 0600 не должно и секунды лежать читаемым для всех.
-                session.chmod(tmp, 0o600)
                 f.write(data)
             if old is not None:
                 session.chown(tmp, old.st_uid, old.st_gid)
@@ -268,9 +293,13 @@ def write_file(session, directory: str, filename: str, data: bytes, overwrite: b
                     raise
         except BaseException:
             # Временный файл за собой убираем — но только свой: если имя было
-            # занято, там чужой файл. Не вышло убрать — исходная ошибка важнее.
+            # занято, там чужое. Не вышло убрать — исходная ошибка важнее.
             if created:
                 with suppress(OSError, paramiko.SSHException, EOFError):
                     session.remove(tmp)
             raise
+        finally:
+            if created:
+                with suppress(OSError, paramiko.SSHException, EOFError):
+                    session.rmdir(tmpdir)
     return target

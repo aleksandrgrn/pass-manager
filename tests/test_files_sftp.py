@@ -152,6 +152,20 @@ class _RootedSFTP(paramiko.SFTPServerInterface):
             return paramiko.SFTPServer.convert_errno(e.errno)
         return paramiko.SFTP_OK
 
+    def mkdir(self, path, attr):
+        try:
+            os.mkdir(self._real(path), attr.st_mode if attr.st_mode is not None else 0o755)
+        except OSError as e:
+            return paramiko.SFTPServer.convert_errno(e.errno)
+        return paramiko.SFTP_OK
+
+    def rmdir(self, path):
+        try:
+            os.rmdir(self._real(path))
+        except OSError as e:
+            return paramiko.SFTPServer.convert_errno(e.errno)
+        return paramiko.SFTP_OK
+
     def rename(self, oldpath, newpath):
         # Как OpenSSH: занятое имя не затирается.
         try:
@@ -193,7 +207,7 @@ class _Vps:
     def leftovers(self):
         """Временные файлы загрузки, оставшиеся на сервере."""
         return [
-            name for _, _, names in os.walk(self.root) for name in names
+            name for _, dirs, names in os.walk(self.root) for name in dirs + names
             if '.pm-upload-' in name
         ]
 
@@ -415,13 +429,54 @@ def test_download_name_with_control_characters(admin_client, server, granted, ac
 
 def test_silent_sftp_subsystem_does_not_hang(admin_client, server, granted, access_key, vps,
                                              monkeypatch):
-    monkeypatch.setattr(sftp, 'CONNECT_TIMEOUT', 2)
+    monkeypatch.setattr(sftp, 'SESSION_TIMEOUT', 2)
     vps.silent.set()
     started = time.monotonic()
     resp = _list(admin_client, server)
     assert time.monotonic() - started < 10
-    assert resp.status_code == 502
-    assert 'Не удалось подключиться' in resp.get_data(as_text=True)
+    assert resp.status_code == 504
+    assert 'не уложился' in resp.get_data(as_text=True)
+
+
+def test_slow_server_is_cut_off_by_session_deadline(admin_client, server, granted, access_key,
+                                                    monkeypatch):
+    # Сервер отвечает, но слишком долго: таймаут отдельной операции велик,
+    # срабатывает общий срок сессии.
+    real = _RootedSFTP.list_folder
+
+    def _slow(self, path):
+        time.sleep(4)
+        return real(self, path)
+
+    monkeypatch.setattr(_RootedSFTP, 'list_folder', _slow)
+    monkeypatch.setattr(sftp, 'SESSION_TIMEOUT', 1)
+    started = time.monotonic()
+    resp = _list(admin_client, server)
+    assert time.monotonic() - started < 3.5
+    assert resp.status_code == 504
+    assert _logs()[0].result == 'error'
+
+
+def test_temp_file_is_never_world_readable(server, vps, service_key):
+    # Временный файл лежит в каталоге 0700 — постороннему до него не добраться.
+    seen = []
+
+    class Spy:
+        def __init__(self, real):
+            self.real = real
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+        def open(self, path, mode):
+            parent = vps.root / posixpath.dirname(path).lstrip('/')
+            seen.append(stat.S_IMODE(parent.stat().st_mode))
+            return self.real.open(path, mode)
+
+    with sftp.connect('127.0.0.1', vps.port, 'root', service_key) as session:
+        sftp.write_file(Spy(session), '/etc', 'secret.key', b'k', overwrite=False)
+    assert seen == [0o700]
+    assert vps.leftovers() == []
 
 
 def test_upload_long_file_name(admin_client, server, granted, access_key, vps):
@@ -433,7 +488,8 @@ def test_upload_long_file_name(admin_client, server, granted, access_key, vps):
 def test_failed_upload_does_not_remove_foreign_temp_file(server, vps, service_key, monkeypatch):
     # Коллизия временного имени: файл с ним чужой, убирать его нельзя.
     monkeypatch.setattr(sftp.secrets, 'token_hex', lambda n: 'collision')
-    foreign = vps.root / 'etc' / '.pm-upload-collision'
+    foreign = vps.root / 'etc' / '.pm-upload-collision' / 'file'
+    foreign.parent.mkdir()
     foreign.write_text('чужой')
     with sftp.connect('127.0.0.1', vps.port, 'root', service_key) as session, \
             pytest.raises(sftp.SftpError):
