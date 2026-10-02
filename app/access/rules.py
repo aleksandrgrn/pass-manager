@@ -85,6 +85,34 @@ def can_self_grant(user, server):
     return server.group_id is not None and server.group_id in _group_ids(user)
 
 
+def has_active_grant(user, server):
+    """Есть ли у пользователя активная выдача на сервер («зелёный ключ»)."""
+    return AccessAssignment.query.filter_by(
+        user_id=user.id, server_id=server.id, state='active',
+    ).first() is not None
+
+
+def files_denial(user, server, has_grant):
+    """Почему пользователю нельзя в файлы сервера; None — можно.
+
+    Одно правило и для вида кнопки в строке, и для маршрутов: серая кнопка —
+    только вид, запрос можно послать в обход интерфейса. Роль не проверяется,
+    доступ даёт активная выдача; исключение — суперадмин: он управляет, на VPS
+    не ходит. Отдельная проверка видимости не нужна — активная выдача сама
+    делает сервер видимым (см. assert_can_access_server).
+
+    `has_grant` передаётся снаружи: список серверов узнаёт выдачи одним
+    запросом на всю страницу, маршрут — через has_active_grant.
+    """
+    if user.is_superadmin:
+        return 'Суперадмин на серверы не ходит — окно файлов ему недоступно'
+    if server.vps_manager_server_id is None:
+        return 'Сервер не подключён к VPS Manager'
+    if not has_grant:
+        return 'Файлы доступны после выдачи доступа на сервер'
+    return None
+
+
 def servers_needing_self_grant(user):
     """Остаток для массовой самовыдачи (C3-2): серверы моих групп, где у меня
     нет активной выдачи.

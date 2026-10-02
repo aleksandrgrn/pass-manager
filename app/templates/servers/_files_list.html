@@ -1,0 +1,36 @@
+{# Содержимое окна файлов: каталог сервера и форма загрузки в него. #}
+{% if message %}
+<div class="nc-summary ok"><span class="dot"></span><span>{{ message }}</span></div>
+{% endif %}
+<div class="fl-path">{{ path }}</div>
+<div class="fl-list">
+    <table>
+        <tbody>
+            {% if parent is not none %}
+            <tr>
+                <td colspan="3"><button type="button" class="fl-link" data-files-dir="{{ parent }}">↑ ..</button></td>
+            </tr>
+            {% endif %}
+            {% for entry in entries %}
+            <tr>
+                {% if entry.is_dir %}
+                <td colspan="2"><button type="button" class="fl-link" data-files-entry-dir data-files-dir="{{ entry.path }}">{{ entry.name }}/</button></td>
+                {% else %}
+                <td><button type="button" class="fl-link" title="Скачать" data-files-download="{{ entry.path }}" data-files-name="{{ entry.name }}">{{ entry.name }}</button></td>
+                <td class="fl-meta">{{ entry.size|filesizeformat(true) }}</td>
+                {% endif %}
+                <td class="fl-meta">{{ entry.mtime }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="fl-meta">Каталог пуст.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if truncated %}
+<p class="text-xs text-faint">Показаны первые {{ entries|length }} записей — список обрезан.</p>
+{% endif %}
+<form class="flex flex-wrap items-center gap-2" data-files-upload data-files-cwd="{{ path }}" data-files-max="{{ max_size }}">
+    <input type="file" name="file" required class="text-sm">
+    <button type="submit" class="btn secondary">Загрузить в этот каталог</button>
+</form>

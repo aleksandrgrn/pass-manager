@@ -1,11 +1,13 @@
 """Server CRUD + HTMX endpoints."""
+import io
 import json
 import os
-from contextlib import closing
+import posixpath
+from contextlib import closing, contextmanager
 
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
-    current_app, abort, Response
+    current_app, abort, Response, send_file
 )
 from flask_login import login_required, current_user
 from sqlalchemy import or_
@@ -13,11 +15,14 @@ from sqlalchemy import or_
 from app.extensions import db
 from app.models import (
     Server, Domain, ProvisioningJob, ServerGroup, ServerGroupMembership,
-    AccessAssignment,
+    AccessAssignment, FileAccessLog,
 )
-from app.access.rules import assert_can_access_server, visible_servers, can_self_grant
+from app.access.rules import (
+    assert_can_access_server, visible_servers, can_self_grant,
+    files_denial, has_active_grant,
+)
 from app.auth.decorators import role_required
-from app.services import netcheck, vps_client
+from app.services import netcheck, sftp, vps_client
 from app.servers.forms import (
     ServerForm, ServerFilterForm,
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
@@ -364,6 +369,133 @@ def netcheck_run(server_id, tool):
     response.headers['X-Accel-Buffering'] = 'no'
     response.headers['Cache-Control'] = 'no-cache'
     return response
+
+
+# --- Окно файлов (SFTP) ---
+
+# Шаблону строки — то же правило, что и маршрутам ниже.
+servers_bp.add_app_template_global(files_denial)
+
+def _files_log(server, action, path, result, size=None, detail=None):
+    db.session.add(FileAccessLog(
+        user_id=current_user.id, server_id=server.id, action=action,
+        path=path, size=size, result=result, detail=detail,
+    ))
+    db.session.commit()
+
+
+def _files_server(server_id, action, path):
+    """Сервер, в файлы которого текущему пользователю можно; иначе 403 и запись."""
+    server = Server.query.get_or_404(server_id)
+    reason = files_denial(current_user, server, has_active_grant(current_user, server))
+    if reason:
+        _files_log(server, action, path, 'denied', detail=reason)
+        abort(Response(reason, 403, mimetype='text/plain'))
+    return server
+
+
+def _files_error(server, action, path, exc):
+    """Ошибка операции: строка в журнал, человеку — текст (его покажет окно)."""
+    _files_log(server, action, path, 'error', detail=str(exc))
+    return Response(str(exc), exc.status, mimetype='text/plain')
+
+
+@contextmanager
+def _files_session(server):
+    """SFTP-сессия на сервер. Ключ берётся у VPS Manager на каждую операцию и
+    живёт только в памяти: нет секрета в покое и нет устаревших копий."""
+    resp = vps_client.get_access_key(server.vps_manager_server_id)
+    if not resp.get('success') or not resp.get('private_key'):
+        raise sftp.SftpError(
+            'VPS Manager не отдал ключ сервера: '
+            + (resp.get('message') or 'причина не названа'))
+    if not server.ip_address:
+        raise sftp.SftpError('У сервера не указан IP.', 400)
+    with sftp.connect(server.ip_address, server.ssh_port or 22,
+                      server.ssh_username, resp['private_key']) as session:
+        yield session
+
+
+def _files_listing(server, listing, message=None):
+    return render_template('servers/_files_list.html', server=server,
+                           max_size=sftp.MAX_FILE_SIZE, message=message, **listing)
+
+
+@servers_bp.route('/<int:server_id>/files')
+@login_required
+def files_list(server_id):
+    """Каталог сервера — фрагмент для окна файлов. Без path — домашний каталог."""
+    path = request.args.get('path') or ''
+    server = _files_server(server_id, 'list', path)
+    try:
+        with _files_session(server) as session:
+            listing = sftp.list_dir(session, path)
+    except sftp.SftpError as e:
+        return _files_error(server, 'list', path, e)
+    _files_log(server, 'list', listing['path'], 'ok')
+    return _files_listing(server, listing)
+
+
+@servers_bp.route('/<int:server_id>/files/download')
+@login_required
+def files_download(server_id):
+    """Файл с сервера — всегда вложением: он не должен открыться как страница
+    приложения."""
+    path = request.args.get('path') or ''
+    server = _files_server(server_id, 'download', path)
+    try:
+        if not path:
+            raise sftp.SftpError('Не указан файл.', 400)
+        with _files_session(server) as session:
+            data = sftp.read_file(session, path)
+    except sftp.SftpError as e:
+        return _files_error(server, 'download', path, e)
+    _files_log(server, 'download', path, 'ok', size=len(data))
+    response = send_file(
+        io.BytesIO(data), mimetype='application/octet-stream',
+        as_attachment=True, download_name=posixpath.basename(path) or 'file',
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@servers_bp.route('/<int:server_id>/files/upload', methods=['POST'])
+@login_required
+def files_upload(server_id):
+    """Файл с ПК — в каталог path. Поверх существующего — только с overwrite=1.
+    Ответ — перерисованный каталог."""
+    # Тело целиком ограничено MAX_CONTENT_LENGTH (app/config.py) — здесь
+    # проверяется уже сам файл.
+    directory = request.form.get('path') or ''
+    upload = request.files.get('file')
+
+    server = _files_server(server_id, 'upload', directory)
+    name = ''
+    target = None
+    try:
+        if upload is None or not directory:
+            raise sftp.SftpError('Не выбран файл или каталог.', 400)
+        # Браузер присылает имя без пути; путь в имени отбрасывается, а не
+        # исполняется — файл ложится только в открытый каталог.
+        name = posixpath.basename((upload.filename or '').replace('\\', '/'))
+        data = upload.read(sftp.MAX_FILE_SIZE + 1)
+        sftp.validate_upload(name, len(data))
+        with _files_session(server) as session:
+            target = sftp.write_file(
+                session, directory, name, data,
+                overwrite=request.form.get('overwrite') == '1')
+            _files_log(server, 'upload', target, 'ok', size=len(data))
+            listing = sftp.list_dir(session, directory)
+    except sftp.SftpError as e:
+        if target is not None:
+            # Файл уже на месте и записан в журнал — не удалось только
+            # перечитать каталог.
+            _files_log(server, 'list', directory, 'error', detail=str(e))
+            return Response(f'Файл загружен, но каталог перечитать не удалось: {e}',
+                            502, mimetype='text/plain')
+        return _files_error(server, 'upload', posixpath.join(directory, name), e)
+    return _files_listing(server, listing, message=f'Файл «{name}» загружен.')
 
 
 @servers_bp.route('/new', methods=['GET', 'POST'])

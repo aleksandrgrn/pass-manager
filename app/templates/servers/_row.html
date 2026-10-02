@@ -68,6 +68,7 @@
     <td class="text-center whitespace-nowrap">
         <div class="row-actions">
             {% include 'servers/_netcheck_btn.html' %}
+            {% include 'servers/_files_btn.html' %}
         {% set access = access_states.get(server.id) %}
         {% if access == 'has' %}
         <span class="icon-btn" role="img" style="color: var(--success); cursor: default"

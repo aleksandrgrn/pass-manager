@@ -240,6 +240,26 @@ class AccessAssignment(db.Model):
         return f'<AccessAssignment server={self.server_id} user={self.user_id} state={self.state}>'
 
 
+class FileAccessLog(db.Model):
+    """Журнал окна файлов: кто, когда, на каком сервере и что сделал.
+
+    В логах самого VPS виден только сервисный ключ, поэтому человека можно
+    восстановить лишь отсюда. Пишется каждая операция и каждый отказ."""
+    __tablename__ = 'file_access_log'
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    server_id = db.Column(db.Integer, db.ForeignKey('servers.id'), nullable=False, index=True)
+    action = db.Column(db.String(16), nullable=False)   # list/download/upload
+    path = db.Column(db.Text, nullable=True)
+    size = db.Column(db.Integer, nullable=True)         # байты; у списка и отказов NULL
+    result = db.Column(db.String(16), nullable=False)   # ok/denied/error
+    detail = db.Column(db.Text, nullable=True)          # причина отказа или ошибки
+
+    def __repr__(self):
+        return f'<FileAccessLog {self.action} server={self.server_id} user={self.user_id} {self.result}>'
+
+
 class ServerGroup(db.Model):
     """Команда-владелец серверов (specs/track-c-access-design.md, Р3).
 

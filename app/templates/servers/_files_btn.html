@@ -1,0 +1,15 @@
+{# Кнопка «Файлы» строки. У суперадмина её нет вовсе: он на VPS не ходит. #}
+{% if not current_user.is_superadmin %}
+{% set files_denied = files_denial(current_user, server, access_states.get(server.id) == 'has') %}
+<button type="button" class="icon-btn" id="files-btn-{{ server.id }}"
+        {% if not files_denied %}
+        data-files-url="{{ url_for('servers.files_list', server_id=server.id) }}"
+        data-files-name="{{ server.name }}"
+        title="Файлы" aria-label="Файлы {{ server.name }}"
+        {% else %}
+        disabled style="opacity: .3; cursor: default"
+        title="{{ files_denied }}" aria-label="Файлы {{ server.name }}: {{ files_denied }}"
+        {% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+</button>
+{% endif %}

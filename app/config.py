@@ -75,6 +75,12 @@ class Config:
     LOCAL_ADMIN_USERNAME = os.environ.get('LOCAL_ADMIN_USERNAME', 'admin')
     LOCAL_ADMIN_PASSWORD = os.environ.get('LOCAL_ADMIN_PASSWORD', '')
 
+    # Предел тела запроса. Самое большое, что приходит, — файл окна файлов:
+    # 5 МБ (MAX_FILE_SIZE в app/services/sftp.py) плюс обвязка multipart.
+    # Совпадает с client_max_body_size в nginx. Задан на всё приложение, а не
+    # в маршруте: форму первым разбирает CSRF, до любого обработчика.
+    MAX_CONTENT_LENGTH = 6 * 1024 * 1024
+
     # Pagination
     # Больше размера парка (401 сервер на 2026-08-07), чтобы список был одной
     # страницей: отдел листает его сверху вниз, а шапка таблицы липкая. Блок

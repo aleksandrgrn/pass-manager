@@ -204,4 +204,154 @@
     }
   })();
 </script>
+
+{% if not current_user.is_superadmin %}
+<style>
+  .fl-path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted);
+             margin-bottom: 8px; word-break: break-all; }
+  .fl-list { border: 1px solid var(--line); border-radius: 8px; max-height: 22rem; overflow: auto; margin-bottom: 12px; }
+  .fl-list table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .fl-list td { padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  .fl-list tr:last-child td { border-bottom: 0; }
+  .fl-link { appearance: none; background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent);
+             font: inherit; text-align: left; word-break: break-all; }
+  .fl-link:hover { text-decoration: underline; }
+  .fl-meta { color: var(--faint); white-space: nowrap; text-align: right; }
+  #files.fl-busy #files-body { opacity: .5; pointer-events: none; }
+</style>
+<dialog id="files" class="intro" aria-labelledby="files-title">
+    <div class="flex items-start justify-between gap-3 mb-3">
+        <h2 id="files-title" style="margin-bottom: 2px"></h2>
+        <form method="dialog"><button class="btn ghost" aria-label="Закрыть">✕</button></form>
+    </div>
+    <div id="files-msg" hidden></div>
+    <div id="files-body"></div>
+    <p class="text-xs text-faint" style="margin: 12px 0 0">Файл идёт через Pass Manager. Клик по имени файла — скачать. Действия записываются в журнал.</p>
+</dialog>
+<script>
+  (function(){
+    var dlg = document.getElementById('files');
+    var body = document.getElementById('files-body');
+    var msg = document.getElementById('files-msg');
+    var base = null;
+    // Номер открытия окна. Ответ на запрос прошлого открытия отбрасывается:
+    // иначе каталог сервера A встал бы под заголовок B и загрузка ушла бы не
+    // на тот сервер. Меняется только при открытии: событие close приходит
+    // с задержкой и сбросило бы уже новый запрос.
+    var session = 0;
+
+    function say(text, level) {
+      msg.hidden = !text;
+      msg.className = level ? 'nc-summary ' + level : 'nc-status';
+      msg.textContent = text || '';
+      // «Файл загружен» от прошлой операции рядом с новой ошибкой сбивает с толку.
+      var done = body.querySelector('.nc-summary.ok');
+      if (level === 'bad' && done) done.remove();
+    }
+    // Пока идёт запрос, каталог не нажимается: второй клик не обгонит первый.
+    // work получает stale(): true — окно уже не то, ответ показывать нельзя.
+    async function busy(text, work) {
+      var mine = session;
+      function stale() { return mine !== session; }
+      dlg.classList.add('fl-busy');
+      say(text);
+      try { await work(stale); }
+      catch (err) { if (!stale()) say('Запрос оборвался: ' + err.message, 'bad'); }
+      finally { if (!stale()) dlg.classList.remove('fl-busy'); }
+    }
+    // Ответ маршрута: при успехе вернёт его как есть, при отказе покажет причину.
+    async function ok(resp) {
+      if (resp.redirected) { location.reload(); return false; }  // сессия истекла
+      if (resp.ok) return true;
+      var plain = (resp.headers.get('Content-Type') || '').indexOf('text/plain') === 0;
+      var text = plain ? (await resp.text()).trim()
+               : resp.status === 413 ? 'Файл слишком большой.' : '';
+      say(text || ('Ошибка ' + resp.status), 'bad');
+      return false;
+    }
+    function open(path) {
+      return busy('Читаю каталог…', async function(stale){
+        var resp = await fetch(base + (path == null ? '' : '?path=' + encodeURIComponent(path)));
+        if (stale() || !await ok(resp)) return;
+        var html = await resp.text();
+        if (stale()) return;
+        body.innerHTML = html;
+        say('');
+      });
+    }
+    function download(path, name) {
+      return busy('Скачиваю…', async function(stale){
+        var resp = await fetch(base + '/download?path=' + encodeURIComponent(path));
+        if (stale() || !await ok(resp)) return;
+        var blob = await resp.blob();
+        if (stale()) return;
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        say('');
+      });
+    }
+    function upload(form, overwrite) {
+      var file = form.querySelector('input[type=file]').files[0];
+      if (!file) return;
+      var max = Number(form.dataset.filesMax);
+      if (file.size > max) {
+        say('Файл больше ' + Math.floor(max / 1048576) + ' МБ — через это окно не передаётся.', 'bad');
+        return;
+      }
+      return busy('Загружаю…', async function(stale){
+        var data = new FormData();
+        data.append('path', form.dataset.filesCwd);
+        data.append('file', file);
+        if (overwrite) data.append('overwrite', '1');
+        var resp = await fetch(base + '/upload', {
+          method: 'POST', body: data,
+          headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content},
+        });
+        if (stale()) return;
+        if (resp.status === 409 && !overwrite) {
+          say('');
+          if (confirm('Файл «' + file.name + '» в этом каталоге уже есть. Заменить?')) {
+            // Вне busy: текущий запрос должен сначала отпустить окно.
+            setTimeout(function(){ if (!stale()) upload(form, true); }, 0);
+          }
+          return;
+        }
+        if (!await ok(resp)) return;
+        var html = await resp.text();
+        if (stale()) return;
+        body.innerHTML = html;
+        say('');
+      });
+    }
+
+    // Строки списка перерисовывает HTMX, поэтому слушаем документ, а не кнопки.
+    document.addEventListener('click', function(e){
+      var btn = e.target.closest('[data-files-url]');
+      if (!btn) return;
+      session++;
+      base = btn.dataset.filesUrl;
+      dlg.classList.remove('fl-busy');
+      document.getElementById('files-title').textContent = 'Файлы: ' + btn.dataset.filesName;
+      body.replaceChildren();
+      dlg.showModal();
+      open(null);
+    });
+    body.addEventListener('click', function(e){
+      var dir = e.target.closest('[data-files-dir]');
+      if (dir) { open(dir.dataset.filesDir); return; }
+      var file = e.target.closest('[data-files-download]');
+      if (file) download(file.dataset.filesDownload, file.dataset.filesName);
+    });
+    body.addEventListener('submit', function(e){
+      var form = e.target.closest('[data-files-upload]');
+      if (!form) return;
+      e.preventDefault();
+      upload(form, false);
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}
