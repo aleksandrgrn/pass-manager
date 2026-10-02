@@ -307,10 +307,21 @@
         });
 
         let _cellClickTimer = null;
+        let _cellDownX = 0, _cellDownY = 0;
+        document.addEventListener('mousedown', (e) => { _cellDownX = e.clientX; _cellDownY = e.clientY; });
         document.addEventListener('click', (e) => {
             const cell = e.target.closest('[data-inline-edit], .pw-mask');
             if (!cell || cell.dataset.editing === '1') return;
             if (_cellClickTimer) { clearTimeout(_cellClickTimer); _cellClickTimer = null; return; }
+            // Комментарий — длинный свободный текст, из него берут кусок, а не
+            // всё целиком: по клику не копируем, выделение и Ctrl+C работают
+            // как обычно. В остальных ячейках протяжка — тоже не клик: браузер
+            // шлёт click и после неё, и ячейка уходила в буфер целиком поверх
+            // выделенного куска. Смотрим на сдвиг мыши, а не на наличие
+            // выделения: щелчок по уже выделенному тексту снимает выделение
+            // только после click, и такой клик молча не копировал бы.
+            if (cell.dataset.inlineEdit === 'notes') return;
+            if (Math.abs(e.clientX - _cellDownX) > 3 || Math.abs(e.clientY - _cellDownY) > 3) return;
             const text = cell.textContent.trim();
             _cellClickTimer = setTimeout(() => {
                 _cellClickTimer = null;
@@ -327,7 +338,9 @@
         document.addEventListener('mouseover', (e) => {
             const cell = e.target.closest('[data-inline-edit]');
             if (cell && cell.dataset.editing !== '1') {
-                cell.title = 'Клик — копировать · двойной клик — редактировать';
+                cell.title = cell.dataset.inlineEdit === 'notes'
+                    ? 'Двойной клик — редактировать'
+                    : 'Клик — копировать · двойной клик — редактировать';
             }
         });
     </script>

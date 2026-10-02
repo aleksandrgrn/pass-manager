@@ -530,6 +530,19 @@ class TestCardMask:
         ).get_data(as_text=True)
         assert "closest('[data-inline-edit], .pw-mask')" in body
 
+    def test_click_copy_guards(self, superadmin_client, sample_server):
+        """Охрана условий, при которых клик не копирует.
+
+        Комментарий по клику не копируется вовсе, а в остальных ячейках
+        протяжка с выделением не считается кликом. Обе проверки живут в JS,
+        и без них ни один серверный тест не краснеет — держим строки явно.
+        """
+        body = superadmin_client.get(
+            self.DETAIL_URL.format(id=sample_server.id)
+        ).get_data(as_text=True)
+        assert "cell.dataset.inlineEdit === 'notes'" in body
+        assert 'Math.abs(e.clientX - _cellDownX) > 3' in body
+
 
 class TestEditFormMask:
     """Форма правки: все password-поля закрыты type="password".
