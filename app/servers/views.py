@@ -451,9 +451,12 @@ def files_download(server_id):
     except sftp.SftpError as e:
         return _files_error(server, 'download', path, e)
     _files_log(server, 'download', path, 'ok', size=len(data))
+    # В Unix имя файла может содержать перевод строки и прочие управляющие
+    # символы; в заголовок ответа им нельзя.
+    name = ''.join(c for c in posixpath.basename(path) if c.isprintable())
     response = send_file(
         io.BytesIO(data), mimetype='application/octet-stream',
-        as_attachment=True, download_name=posixpath.basename(path) or 'file',
+        as_attachment=True, download_name=name or 'file',
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Cache-Control'] = 'no-store'

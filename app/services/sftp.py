@@ -11,6 +11,7 @@ import io
 import posixpath
 import secrets
 import stat
+import threading
 from contextlib import contextmanager, suppress
 from datetime import datetime
 
@@ -76,11 +77,19 @@ def connect(host: str, port: int, username: str, private_key: str):
                 look_for_keys=False,
             )
             # Не client.open_sftp(): он согласует версию SFTP на канале без
-            # таймаута, и сервер, промолчавший после входа, держал бы воркер вечно.
-            channel = client.get_transport().open_session(timeout=CONNECT_TIMEOUT)
-            channel.settimeout(OP_TIMEOUT)
-            channel.invoke_subsystem('sftp')
-            session = paramiko.SFTPClient(channel)
+            # таймаута. А ответа на запрос подсистемы paramiko ждёт без таймаута
+            # вовсе, поэтому открытие сторожит таймер: сервер, промолчавший после
+            # входа, получает закрытое соединение, а не воркер навечно.
+            watchdog = threading.Timer(CONNECT_TIMEOUT, client.close)
+            watchdog.daemon = True
+            watchdog.start()
+            try:
+                channel = client.get_transport().open_session(timeout=CONNECT_TIMEOUT)
+                channel.settimeout(OP_TIMEOUT)
+                channel.invoke_subsystem('sftp')
+                session = paramiko.SFTPClient(channel)
+            finally:
+                watchdog.cancel()
         except paramiko.AuthenticationException:
             raise SftpError('Сервер не принял сервисный ключ.')
         except (paramiko.SSHException, OSError, EOFError) as e:
@@ -112,21 +121,27 @@ def _errors():
 def list_dir(session, path: str) -> dict:
     """Каталог `path` (пустой — домашний каталог SSH-пользователя).
 
-    Возвращает path, parent (None у корня), entries и truncated. Показываются
-    первые MAX_ENTRIES записей: сначала каталоги, внутри — по имени.
+    Возвращает path, parent (None у корня), entries и truncated. С сервера
+    читаются только первые MAX_ENTRIES записей, в том порядке, в каком он их
+    отдаёт; показываются они так: сначала каталоги, внутри — по имени.
     """
     with _errors():
         path = session.normalize(path or '.')
-        # Не listdir_iter: он читает ответы сервера сам и пачками, и stat ссылки
-        # посреди обхода забирает чужой ответ — обход виснет до таймаута.
+        # Обход обрывается на пределе: каталог со ста тысячами файлов не должен
+        # ни читаться целиком, ни сортироваться. Ссылки разбираются ниже, после
+        # обхода: listdir_iter читает ответы сервера сам, и stat посреди него
+        # забирает чужой ответ — обход виснет до таймаута.
         found = []
-        for attr in session.listdir_attr(path):
+        truncated = False
+        for attr in session.listdir_iter(path):
+            if len(found) >= MAX_ENTRIES:
+                truncated = True
+                break
             full = posixpath.join(path, attr.filename)
             found.append((not stat.S_ISDIR(attr.st_mode or 0), attr.filename.casefold(), full, attr))
         found.sort(key=lambda item: item[:3])
-        truncated = len(found) > MAX_ENTRIES
         entries = []
-        for _, _, full, attr in found[:MAX_ENTRIES]:
+        for _, _, full, attr in found:
             if stat.S_ISLNK(attr.st_mode or 0):
                 try:
                     attr = session.stat(full)  # куда смотрит ссылка
@@ -224,12 +239,13 @@ def write_file(session, directory: str, filename: str, data: bytes, overwrite: b
                 raise SftpError('Файл с таким именем уже есть.', 409)
             target = session.normalize(target)
 
-        tmp = posixpath.join(
-            posixpath.dirname(target),
-            f'.{posixpath.basename(target)}.pm-upload-{secrets.token_hex(4)}',
-        )
+        # Имя короткое и от имени файла не зависит: иначе файл с именем под
+        # предел в 255 байт не загрузился бы.
+        tmp = posixpath.join(posixpath.dirname(target), f'.pm-upload-{secrets.token_hex(8)}')
+        created = False
         try:
             with session.open(tmp, 'wx') as f:
+                created = True
                 # Сначала закрыть от чужих глаз, потом писать: содержимое файла
                 # с правами 0600 не должно и секунды лежать читаемым для всех.
                 session.chmod(tmp, 0o600)
@@ -251,8 +267,10 @@ def write_file(session, directory: str, filename: str, data: bytes, overwrite: b
                         raise SftpError('Файл с таким именем уже есть.', 409)
                     raise
         except BaseException:
-            # Временный файл за собой убираем; не вышло — исходная ошибка важнее.
-            with suppress(OSError, paramiko.SSHException, EOFError):
-                session.remove(tmp)
+            # Временный файл за собой убираем — но только свой: если имя было
+            # занято, там чужой файл. Не вышло убрать — исходная ошибка важнее.
+            if created:
+                with suppress(OSError, paramiko.SSHException, EOFError):
+                    session.remove(tmp)
             raise
     return target

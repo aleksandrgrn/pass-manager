@@ -221,7 +221,7 @@
              font: inherit; text-align: left; word-break: break-all; }
   .fl-link:hover { text-decoration: underline; }
   .fl-meta { color: var(--faint); white-space: nowrap; text-align: right; }
-  #files.fl-busy #files-body { opacity: .5; pointer-events: none; }
+  #files.fl-busy #files-body { opacity: .5; }
   /* Классы плашки задают display и перебивают атрибут hidden. */
   #files-msg[hidden] { display: none; }
   /* Обводка — только при переходе с клавиатуры: после клика мышью фокус
@@ -260,16 +260,18 @@
       var done = body.querySelector('.nc-summary.ok');
       if (level === 'bad' && done) done.remove();
     }
-    // Пока идёт запрос, каталог не нажимается: второй клик не обгонит первый.
+    // Пока идёт запрос, каталог не нажимается ни мышью, ни с клавиатуры
+    // (inert): второй запрос не обгонит первый.
     // work получает stale(): true — окно уже не то, ответ показывать нельзя.
     async function busy(text, work) {
       var mine = session;
       function stale() { return mine !== session; }
       dlg.classList.add('fl-busy');
+      body.inert = true;
       say(text);
       try { await work(stale); }
       catch (err) { if (!stale()) say('Запрос оборвался: ' + err.message, 'bad'); }
-      finally { if (!stale()) dlg.classList.remove('fl-busy'); }
+      finally { if (!stale()) { dlg.classList.remove('fl-busy'); body.inert = false; } }
     }
     // Ответ маршрута: при успехе вернёт его как есть, при отказе покажет причину.
     async function ok(resp) {
@@ -346,6 +348,7 @@
       session++;
       base = btn.dataset.filesUrl;
       dlg.classList.remove('fl-busy');
+      body.inert = false;
       document.getElementById('files-title').textContent = 'Файлы: ' + btn.dataset.filesName;
       body.replaceChildren();
       dlg.showModal();

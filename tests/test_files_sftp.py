@@ -12,6 +12,7 @@ import posixpath
 import socket
 import stat
 import threading
+import time
 from contextlib import suppress
 from unittest.mock import patch
 
@@ -54,8 +55,9 @@ def host_key() -> paramiko.PKey:
 
 
 class _Auth(paramiko.ServerInterface):
-    def __init__(self, allowed: paramiko.PKey):
+    def __init__(self, allowed: paramiko.PKey, silent):
         self.allowed = allowed
+        self.silent = silent
 
     def get_allowed_auths(self, username):
         return 'publickey'
@@ -67,6 +69,26 @@ class _Auth(paramiko.ServerInterface):
 
     def check_channel_request(self, kind, chanid):
         return paramiko.OPEN_SUCCEEDED
+
+    def check_channel_subsystem_request(self, channel, name):
+        if self.silent.is_set():
+            self.silent.wait_cleared()  # сервер молчит: ответа на запрос нет
+            return False
+        return super().check_channel_subsystem_request(channel, name)
+
+
+class _Silence(threading.Event):
+    """Флаг «сервер молчит»; release() отпускает застрявшие обработчики."""
+
+    def __init__(self):
+        super().__init__()
+        self._released = threading.Event()
+
+    def wait_cleared(self):
+        self._released.wait(20)
+
+    def release(self):
+        self._released.set()
 
 
 class _Handle(paramiko.SFTPHandle):
@@ -162,10 +184,11 @@ class _RootedSFTP(paramiko.SFTPServerInterface):
 class _Vps:
     """Запущенный сервер: порт, корень файловой системы, запросы chown."""
 
-    def __init__(self, port, root, chowns):
+    def __init__(self, port, root, chowns, silent):
         self.port = port
         self.root = root
         self.chowns = chowns
+        self.silent = silent  # set() — сервер перестаёт отвечать на запрос SFTP
 
     def leftovers(self):
         """Временные файлы загрузки, оставшиеся на сервере."""
@@ -192,6 +215,7 @@ def vps(tmp_path, service_key, host_key):
     listener.bind(('127.0.0.1', 0))
     listener.listen(5)
     transports = []
+    silent = _Silence()
 
     def _serve():
         while True:
@@ -204,11 +228,12 @@ def vps(tmp_path, service_key, host_key):
             transport.set_subsystem_handler('sftp', paramiko.SFTPServer, si)
             transports.append(transport)
             with suppress(paramiko.SSHException, EOFError, OSError):
-                transport.start_server(server=_Auth(allowed))
+                transport.start_server(server=_Auth(allowed, silent))
 
     thread = threading.Thread(target=_serve, daemon=True)
     thread.start()
-    yield _Vps(listener.getsockname()[1], root, chowns)
+    yield _Vps(listener.getsockname()[1], root, chowns, silent)
+    silent.release()
     listener.close()
     for transport in transports:
         transport.close()
@@ -364,6 +389,56 @@ def test_list_is_truncated(admin_client, server, granted, access_key, vps, monke
     body = _list(admin_client, server).get_data(as_text=True)
     assert body.count('data-files-download=') + body.count('data-files-entry-dir') == 3
     assert 'Показаны первые 3' in body
+
+
+def test_truncated_list_still_resolves_symlinks(admin_client, server, granted, access_key, vps,
+                                                monkeypatch):
+    # После оборванного обхода сессия должна оставаться рабочей.
+    big = vps.root / 'big'
+    big.mkdir()
+    for i in range(200):
+        (big / f'link{i:03}').symlink_to('../etc')
+    monkeypatch.setattr(sftp, 'MAX_ENTRIES', 120)
+    resp = _list(admin_client, server, '/big')
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert body.count('data-files-entry-dir') == 120
+    assert 'Показаны первые 120' in body
+
+
+def test_download_name_with_control_characters(admin_client, server, granted, access_key, vps):
+    (vps.root / 'a\nb.conf').write_text('x')
+    resp = _download(admin_client, server, '/a\nb.conf')
+    assert resp.status_code == 200 and resp.data == b'x'
+    assert 'ab.conf' in resp.headers['Content-Disposition']
+
+
+def test_silent_sftp_subsystem_does_not_hang(admin_client, server, granted, access_key, vps,
+                                             monkeypatch):
+    monkeypatch.setattr(sftp, 'CONNECT_TIMEOUT', 2)
+    vps.silent.set()
+    started = time.monotonic()
+    resp = _list(admin_client, server)
+    assert time.monotonic() - started < 10
+    assert resp.status_code == 502
+    assert 'Не удалось подключиться' in resp.get_data(as_text=True)
+
+
+def test_upload_long_file_name(admin_client, server, granted, access_key, vps):
+    name = 'n' * 250 + '.conf'  # 255 байт — предел имени в Linux
+    assert _upload(admin_client, server, name=name).status_code == 200
+    assert (vps.root / 'etc' / name).exists()
+
+
+def test_failed_upload_does_not_remove_foreign_temp_file(server, vps, service_key, monkeypatch):
+    # Коллизия временного имени: файл с ним чужой, убирать его нельзя.
+    monkeypatch.setattr(sftp.secrets, 'token_hex', lambda n: 'collision')
+    foreign = vps.root / 'etc' / '.pm-upload-collision'
+    foreign.write_text('чужой')
+    with sftp.connect('127.0.0.1', vps.port, 'root', service_key) as session, \
+            pytest.raises(sftp.SftpError):
+        sftp.write_file(session, '/etc', 'new.conf', b'x', overwrite=False)
+    assert foreign.read_text() == 'чужой'
 
 
 def test_list_missing_directory(admin_client, server, granted, access_key):
