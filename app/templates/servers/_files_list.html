@@ -31,6 +31,11 @@
 <p class="text-xs text-faint">Показаны первые {{ entries|length }} записей — список обрезан.</p>
 {% endif %}
 <form class="flex flex-wrap items-center gap-2" data-files-upload data-files-cwd="{{ path }}" data-files-max="{{ max_size }}">
-    <input type="file" name="file" required class="text-sm">
-    <button type="submit" class="btn secondary">Загрузить в этот каталог</button>
+    {# Стандартное поле браузера спрятано: кнопка и подпись — в стиле приложения. #}
+    <label class="btn secondary fl-file">
+        <input type="file" name="file" class="sr-only">
+        Выбрать файл
+    </label>
+    <span class="fl-file-name" data-files-chosen>Файл не выбран</span>
+    <button type="submit" class="btn primary" disabled>Загрузить в этот каталог</button>
 </form>

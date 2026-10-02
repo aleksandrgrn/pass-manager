@@ -218,6 +218,11 @@
   .fl-link:hover { text-decoration: underline; }
   .fl-meta { color: var(--faint); white-space: nowrap; text-align: right; }
   #files.fl-busy #files-body { opacity: .5; pointer-events: none; }
+  /* Классы плашки задают display и перебивают атрибут hidden. */
+  #files-msg[hidden] { display: none; }
+  .fl-file:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fl-file-name { font-size: 13px; color: var(--muted); word-break: break-all; flex: 1 1 8rem; }
+  #files .btn:disabled { opacity: .45; cursor: default; }
 </style>
 <dialog id="files" class="intro" aria-labelledby="files-title">
     <div class="flex items-start justify-between gap-3 mb-3">
@@ -344,6 +349,14 @@
       if (dir) { open(dir.dataset.filesDir); return; }
       var file = e.target.closest('[data-files-download]');
       if (file) download(file.dataset.filesDownload, file.dataset.filesName);
+    });
+    // Выбран файл — показываем его имя и включаем «Загрузить».
+    body.addEventListener('change', function(e){
+      var form = e.target.closest('[data-files-upload]');
+      if (!form) return;
+      var file = e.target.files[0];
+      form.querySelector('[data-files-chosen]').textContent = file ? file.name : 'Файл не выбран';
+      form.querySelector('button[type=submit]').disabled = !file;
     });
     body.addEventListener('submit', function(e){
       var form = e.target.closest('[data-files-upload]');
