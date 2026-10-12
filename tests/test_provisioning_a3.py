@@ -664,3 +664,50 @@ class TestProvisioningFailedUI:
         assert server.provisioning_status == 'provisioning'
         state = json.loads(job.steps_json)
         assert state['steps']['rotate'] == 'pending'
+
+
+class TestProvisioningStatusUI:
+    """Статус job'а живёт во фрагменте шагов: HTMX обновляет только его,
+    и строка статуса вне фрагмента застревала на «running» после успеха."""
+
+    def test_last_step_response_reports_success(self, admin_client, db, default_group):
+        user = _make_user(db, 'u-status-1')
+        server = _make_server(db, name='vps-status-01', group=default_group)
+        steps = {s: 'done' for s in STEPS}
+        steps['promote'] = 'pending'
+        job = ProvisioningJob(
+            server_id=server.id, initiated_by=user.id, job_type='onboarding',
+            status='running', steps_json=json.dumps({'steps': steps}),
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        resp = admin_client.post(f'/provisioning/jobs/{job.id}/step')
+
+        assert resp.status_code == 200
+        html = resp.data.decode()
+        assert 'Готово — сервер добавлен' in html
+        assert f'/servers/{server.id}' in html
+        assert 'hx-trigger' not in html  # поллинг остановлен
+
+    def test_running_job_page_shows_progress_inside_fragment(
+            self, admin_client, db, default_group):
+        user = _make_user(db, 'u-status-2')
+        server = _make_server(db, name='vps-status-02', group=default_group)
+        job = start_onboarding(server, user, 'pw')
+
+        html = admin_client.get(f'/provisioning/jobs/{job.id}').data.decode()
+
+        fragment = html[html.index('id="provisioning-steps"'):]
+        assert 'Онбординг идёт' in fragment
+
+    def test_failed_job_fragment_links_to_restart(self, admin_client, db, default_group):
+        user = _make_user(db, 'u-status-3')
+        server = _make_server(db, name='vps-status-03', group=default_group)
+        job = _make_failed_job(db, server, user)
+
+        html = admin_client.get(f'/provisioning/jobs/{job.id}').data.decode()
+
+        fragment = html[html.index('id="provisioning-steps"'):]
+        assert 'rotate_failed: boom' in fragment
+        assert f'/servers/{server.id}' in fragment

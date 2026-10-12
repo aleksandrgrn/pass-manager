@@ -6,6 +6,11 @@
      hx-trigger="load delay:500ms"
      hx-swap="outerHTML"
      {% endif %}>
+    {# Статус здесь, а не в заголовке страницы: HTMX меняет только этот div,
+       и строка снаружи оставалась «running» после успешного завершения. #}
+    {% if job.status not in ('success', 'failed', 'cancelled') %}
+    <p class="text-sm text-muted mb-4">Онбординг идёт…</p>
+    {% endif %}
     <ul class="text-sm space-y-1">
         {% for step_id in provisioning_steps %}
         <li class="flex items-center justify-between">
@@ -17,7 +22,15 @@
         {% endfor %}
     </ul>
 
-    {% if job.status == 'failed' %}
+    {% if job.status == 'success' %}
+    <div class="mt-4 px-4 py-2 rounded text-sm bg-successweak text-success border border-success/30">
+        Готово — сервер добавлен и готов к работе.
+        <a href="{{ url_for('servers.detail', server_id=job.server_id) }}" class="underline">Открыть карточку</a>
+    </div>
+    {% elif job.status == 'failed' %}
     <p class="text-danger text-sm mt-4">Ошибка: {{ job.error_message }}</p>
+    <p class="text-sm mt-1"><a href="{{ url_for('servers.detail', server_id=job.server_id) }}" class="underline">Перезапустить из карточки сервера</a></p>
+    {% elif job.status == 'cancelled' %}
+    <p class="text-sm text-muted mt-4">Онбординг отменён.</p>
     {% endif %}
 </div>
