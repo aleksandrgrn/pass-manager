@@ -157,6 +157,9 @@ class TestCreateLandsInGroup:
             'ip_address': '198.51.100.5',
             'password': 'Init-Pass-123!',
             'group_id': str(default_group.id),
+            # Галка «Активен» в форме по умолчанию стоит; без неё сервер
+            # неактивен и скрыт из списка, а имя находилось только во flash.
+            'active': 'y',
         })
         assert resp.status_code == 302
 

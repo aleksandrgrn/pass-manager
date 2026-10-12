@@ -532,13 +532,13 @@ def create():
             server.group_id = None  # SelectField отдаёт 0, в БД это NULL
         db.session.add(server)
         db.session.commit()
-        flash(f'Сервер «{server.name}» добавлен.', 'success')
 
         try:
             job = start_onboarding(server, current_user, bootstrap_password)
         except OnboardingLockedError as exc:
             # FIX-6c: не должно случаться при создании нового сервера (job
             # ещё ни одного), но start_onboarding — общая точка входа.
+            flash(f'Сервер «{server.name}» добавлен.', 'success')
             flash(str(exc), 'error')
             return redirect(url_for('servers.detail', server_id=server.id))
         return redirect(url_for('provisioning.job_page', job_id=job.id))

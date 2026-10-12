@@ -70,6 +70,11 @@ class TestOnboardingAlwaysRuns:
         # на этапе создания записи (звонок происходит только в шаге bootstrap).
         mock_add.assert_not_called()
 
+        # «Сервер добавлен» поверх идущего онбординга вводил в заблуждение:
+        # итог сообщает сама страница job'а.
+        page = admin_client.get(resp.headers['Location']).data.decode()
+        assert 'добавлен.' not in page
+
 
 class TestOnboardingHasNoOptOut:
     """Галки больше нет: онбординг обязателен, и без пароля форма не проходит.
@@ -698,8 +703,10 @@ class TestProvisioningStatusUI:
 
         html = admin_client.get(f'/provisioning/jobs/{job.id}').data.decode()
 
-        fragment = html[html.index('id="provisioning-steps"'):]
-        assert 'Онбординг идёт' in fragment
+        split = html.index('id="provisioning-steps"')
+        assert 'Онбординг идёт' in html[split:]
+        # Вне фрагмента статусу не место: HTMX его не обновит, и он застрянет.
+        assert 'running' not in html[:split]
 
     def test_failed_job_fragment_links_to_restart(self, admin_client, db, default_group):
         user = _make_user(db, 'u-status-3')
