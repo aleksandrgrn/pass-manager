@@ -40,6 +40,24 @@
     </div>
     {% endif %}
 
+    {# GRSA-163: неподключённый сервер подключается повторным онбордингом.
+       Пока pipeline идёт, кнопку не показываем — там своя «Перезапустить шаг». #}
+    {% if current_user.is_admin and server.vps_manager_server_id is none
+          and server.provisioning_status != 'provisioning' %}
+    <form method="POST" action="{{ url_for('servers.reconnect', server_id=server.id) }}"
+          class="card p-4 mb-4 flex flex-wrap items-end gap-3"
+          onsubmit='return confirm({{ ("Подключить «" ~ server.name ~ "» к VPS Manager? Пароль root на машине будет заменён на новый.")|tojson }});'>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="flex-1 min-w-[16rem]">
+            <label for="reconnect-password" class="field-label">Пароль root для подключения</label>
+            <input id="reconnect-password" name="password" type="password" autocomplete="new-password"
+                   class="field mt-1 font-mono" placeholder="пусто — взять сохранённый">
+            <p class="text-xs text-faint mt-1">Сервер не подключён к VPS Manager. Порт SSH: {{ server.ssh_port or 22 }} — если другой, сначала поправьте в «Редактировать».</p>
+        </div>
+        <button type="submit" class="btn primary">Подключить к VPS Manager</button>
+    </form>
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="card p-4">
             <h2 class="text-sm uppercase tracking-wide text-muted mb-3">Основное</h2>

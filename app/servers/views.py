@@ -546,6 +546,36 @@ def create():
                            show_onboarding=True)
 
 
+@servers_bp.route('/<int:server_id>/reconnect', methods=['POST'])
+@login_required
+@role_required('admin', 'superadmin')
+def reconnect(server_id):
+    """Повторный онбординг сервера, не подключённого к VPS Manager (GRSA-163).
+
+    Тот же pipeline, что при заведении. Пароль root — введённый в карточке, а
+    если поле пустое — сохранённый в базе. Подключённый сервер сюда не пускаем:
+    новый bootstrap завёл бы в VPS Manager дубль с новым номером, а выданные
+    доступы остались бы на старом.
+    """
+    server = _get_server_or_403(server_id)
+    back = redirect(url_for('servers.detail', server_id=server.id))
+    if server.vps_manager_server_id is not None:
+        flash('Сервер уже подключён к VPS Manager.', 'error')
+        return back
+
+    bootstrap_password = request.form.get('password') or server.password
+    if not bootstrap_password:
+        flash('Пароля root нет ни в форме, ни в базе — введите текущий пароль от хостера.', 'error')
+        return back
+
+    try:
+        job = start_onboarding(server, current_user, bootstrap_password)
+    except OnboardingLockedError as exc:
+        flash(str(exc), 'error')
+        return back
+    return redirect(url_for('provisioning.job_page', job_id=job.id))
+
+
 @servers_bp.route('/<int:server_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'superadmin')

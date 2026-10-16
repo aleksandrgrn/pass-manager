@@ -74,7 +74,11 @@ def start_onboarding(server: Server, user, bootstrap_password: str) -> Provision
     db.session.add(job)
 
     server.provisioning_status = 'provisioning'
-    server.bootstrap_request_id = uuid.uuid4().hex
+    # Прежний id не меняем: VPS Manager запоминает его только при успехе. Если
+    # прошлый bootstrap удался, а ответ потерялся (таймаут), тот же id вернёт уже
+    # созданный сервер, а новый завёл бы дубль (GRSA-163).
+    if not server.bootstrap_request_id:
+        server.bootstrap_request_id = uuid.uuid4().hex
 
     db.session.commit()
     return job

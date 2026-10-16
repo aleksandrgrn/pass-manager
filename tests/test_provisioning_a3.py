@@ -80,8 +80,8 @@ class TestOnboardingHasNoOptOut:
     """Галки больше нет: онбординг обязателен, и без пароля форма не проходит.
 
     Отказаться от онбординга нельзя — иначе сервер заводится не подключённым к
-    VPS Manager, а подключить его потом нечем: start_onboarding вызывается
-    только из формы создания.
+    VPS Manager, и подключать его приходится отдельно, кнопкой в карточке
+    (GRSA-163).
     """
 
     def test_create_page_has_no_onboarding_checkbox(self, admin_client, db):
