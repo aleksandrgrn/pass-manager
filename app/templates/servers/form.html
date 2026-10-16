@@ -44,6 +44,7 @@
             <div>
                 {{ form.ssh_port.label(class_='field-label') }}
                 {{ form.ssh_port(class_='field mt-1 font-mono') }}
+                {% for err in form.ssh_port.errors %}<p class="text-danger text-xs">{{ err }}</p>{% endfor %}
             </div>
             <div>
                 {{ form.provider.label(class_='field-label') }}

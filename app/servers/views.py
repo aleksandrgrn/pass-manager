@@ -597,7 +597,7 @@ def _push_address(server, ip_address, ssh_port):
 
     resp = vps_client.update_server_address(server.vps_manager_server_id, ip_address, ssh_port)
     if resp.get('success'):
-        return resp['server']['ip_address'], None
+        return (resp.get('server') or {}).get('ip_address') or ip_address, None
     message = resp.get('message') or 'VPS Manager не принял новый адрес.'
     if resp.get('error_type') == 'connection_failed':
         # Текст SSH-ошибки приходит то с точкой, то без («timed out»).

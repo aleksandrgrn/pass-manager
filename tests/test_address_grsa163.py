@@ -108,6 +108,51 @@ class TestEditForm:
         assert _reload(db, server.id).ip_address == '198.51.100.7'
 
 
+    def test_invalid_port_shows_reason(self, admin_client, db, default_group):
+        server = _make_server(db, default_group)
+        with patch(CLIENT) as mock_update:
+            resp = admin_client.post(f'/servers/{server.id}/edit',
+                                     data=_form(server, ssh_port='99999'))
+
+        assert resp.status_code == 200
+        mock_update.assert_not_called()
+        assert 'text-danger' in resp.get_data(as_text=True).split('name="ssh_port"', 1)[1][:400]
+
+    def test_success_without_server_field_saves_sent_address(self, admin_client, db,
+                                                             default_group):
+        server = _make_server(db, default_group)
+        with patch(CLIENT, return_value={'success': True}):
+            resp = admin_client.post(f'/servers/{server.id}/edit',
+                                     data=_form(server, ip_address='198.51.100.7'))
+
+        assert resp.status_code == 302
+        assert _reload(db, server.id).ip_address == '198.51.100.7'
+
+    def test_resaving_new_address_repairs_failed_local_commit(self, admin_client, db,
+                                                              default_group):
+        # VPS Manager принял адрес, а локальный commit упал: у нас старый адрес.
+        # Повторное сохранение того же нового адреса снова идёт в VPS Manager
+        # (там он уже стоит, дубль-проверка исключает сам сервер) и доходит до базы.
+        server = _make_server(db, default_group)
+        with patch(CLIENT, return_value=_ok('198.51.100.7')), \
+                patch.object(db.session, 'commit', side_effect=RuntimeError('database is locked')):
+            try:
+                admin_client.post(f'/servers/{server.id}/edit',
+                                  data=_form(server, ip_address='198.51.100.7'))
+            except RuntimeError:
+                pass
+        db.session.rollback()
+        assert _reload(db, server.id).ip_address == '192.0.2.60'
+
+        with patch(CLIENT, return_value=_ok('198.51.100.7')) as mock_update:
+            resp = admin_client.post(f'/servers/{server.id}/edit',
+                                     data=_form(_reload(db, server.id), ip_address='198.51.100.7'))
+
+        assert resp.status_code == 302
+        mock_update.assert_called_once_with(42, '198.51.100.7', 2233)
+        assert _reload(db, server.id).ip_address == '198.51.100.7'
+
+
 class TestInlineCell:
 
     def _post(self, client, server, field, value):
