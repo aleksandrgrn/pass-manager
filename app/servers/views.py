@@ -600,8 +600,10 @@ def _push_address(server, ip_address, ssh_port):
         return resp['server']['ip_address'], None
     message = resp.get('message') or 'VPS Manager не принял новый адрес.'
     if resp.get('error_type') == 'connection_failed':
-        message += (' Если хостер выдал новую машину, а не сменил адрес старой, '
-                    'ключа VPS Manager на ней нет — такая смена здесь не пройдёт.')
+        # Текст SSH-ошибки приходит то с точкой, то без («timed out»).
+        message = message.rstrip('. ') + (
+            '. Если хостер выдал новую машину, а не сменил адрес старой, '
+            'ключа VPS Manager на ней нет — такая смена здесь не пройдёт.')
     return None, message
 
 

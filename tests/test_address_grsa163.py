@@ -73,8 +73,7 @@ class TestEditForm:
 
         assert resp.status_code == 200
         body = resp.get_data(as_text=True)
-        assert 'не пускает ключ VPS Manager: timeout' in body
-        assert 'новую машину' in body
+        assert 'не пускает ключ VPS Manager: timeout. Если хостер выдал новую машину' in body
         srv = _reload(db, server.id)
         assert (srv.name, srv.ip_address, srv.ssh_port) == ('vps-moved-01', '192.0.2.60', 2233)
 
