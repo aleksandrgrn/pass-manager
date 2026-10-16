@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from flask import current_app
+from sqlalchemy import func, update
 
 from app.extensions import db
 from app.models import ProvisioningJob, Server
@@ -60,6 +61,33 @@ def start_onboarding(server: Server, user, bootstrap_password: str) -> Provision
             f'У сервера #{server.id} уже есть активный job онбординга (#{existing.id})',
         )
 
+    # Захват сервера одним UPDATE ... WHERE (GRSA-163): проверка выше и вставка
+    # job'а не атомарны, и два одновременных запроса прошли бы оба. Второй здесь
+    # получит 0 строк. Прежний bootstrap_request_id не меняем: VPS Manager
+    # запоминает его только при успехе, и если прошлый bootstrap удался, а ответ
+    # потерялся (таймаут), тот же id вернёт уже созданный сервер, а новый завёл
+    # бы дубль.
+    claimed = db.session.execute(
+        update(Server)
+        .where(
+            Server.id == server.id,
+            Server.provisioning_status != 'provisioning',
+            Server.vps_manager_server_id.is_(None),
+        )
+        .values(
+            provisioning_status='provisioning',
+            bootstrap_request_id=func.coalesce(
+                func.nullif(Server.bootstrap_request_id, ''), uuid.uuid4().hex,
+            ),
+        )
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if not claimed:
+        db.session.rollback()
+        raise OnboardingLockedError(
+            f'Сервер #{server.id} уже подключён к VPS Manager или его онбординг уже идёт',
+        )
+
     state = {
         'steps': {step_id: 'pending' for step_id in STEPS},
         'bootstrap_cred': encrypt(bootstrap_password),
@@ -72,15 +100,8 @@ def start_onboarding(server: Server, user, bootstrap_password: str) -> Provision
         steps_json=json.dumps(state),
     )
     db.session.add(job)
-
-    server.provisioning_status = 'provisioning'
-    # Прежний id не меняем: VPS Manager запоминает его только при успехе. Если
-    # прошлый bootstrap удался, а ответ потерялся (таймаут), тот же id вернёт уже
-    # созданный сервер, а новый завёл бы дубль (GRSA-163).
-    if not server.bootstrap_request_id:
-        server.bootstrap_request_id = uuid.uuid4().hex
-
     db.session.commit()
+    db.session.refresh(server)
     return job
 
 

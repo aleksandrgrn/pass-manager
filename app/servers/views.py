@@ -563,7 +563,10 @@ def reconnect(server_id):
         flash('Сервер уже подключён к VPS Manager.', 'error')
         return back
 
-    bootstrap_password = request.form.get('password') or server.password
+    # Пароль идёт как введён, но строку из одних пробелов считаем пустой —
+    # так же её отвергает форма создания.
+    typed = request.form.get('password') or ''
+    bootstrap_password = typed if typed.strip() else server.password
     if not bootstrap_password:
         flash('Пароля root нет ни в форме, ни в базе — введите текущий пароль от хостера.', 'error')
         return back
