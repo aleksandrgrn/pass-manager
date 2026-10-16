@@ -8,7 +8,7 @@ from contextlib import closing, contextmanager
 
 from flask import (
     Blueprint, render_template, redirect, url_for, flash, request,
-    current_app, abort, Response, send_file
+    current_app, abort, Response, send_file, make_response
 )
 from flask_login import login_required, current_user
 from sqlalchemy import or_
@@ -579,6 +579,32 @@ def reconnect(server_id):
     return redirect(url_for('provisioning.job_page', job_id=job.id))
 
 
+def _push_address(server, ip_address, ssh_port):
+    """Новый IP/порт подключённого сервера сначала отдаём VPS Manager (E12).
+
+    Тот сохраняет адрес, только если по нему пускает его root-ключ, — то есть
+    это та же машина. Возвращает (ip, None), когда адрес принят: ip — в том виде,
+    в каком его записал VPS Manager, его и пишем к себе, чтобы базы совпадали.
+    (None, None) — звать VPS Manager не нужно, сохраняем как раньше.
+    (None, сообщение) — отказ, сохранять нельзя.
+    """
+    if server.vps_manager_server_id is None:
+        return None, None
+    if (ip_address, ssh_port) == ((server.ip_address or '').strip(), server.ssh_port or 22):
+        return None, None
+    if not ip_address:
+        return None, 'У сервера, подключённого к VPS Manager, IP нельзя стереть.'
+
+    resp = vps_client.update_server_address(server.vps_manager_server_id, ip_address, ssh_port)
+    if resp.get('success'):
+        return resp['server']['ip_address'], None
+    message = resp.get('message') or 'VPS Manager не принял новый адрес.'
+    if resp.get('error_type') == 'connection_failed':
+        message += (' Если хостер выдал новую машину, а не сменил адрес старой, '
+                    'ключа VPS Manager на ней нет — такая смена здесь не пройдёт.')
+    return None, message
+
+
 @servers_bp.route('/<int:server_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'superadmin')
@@ -602,12 +628,20 @@ def edit(server_id):
             del form[field_name]
 
     if form.validate_on_submit():
-        form.populate_obj(server)
-        if server.group_id == NO_GROUP_CHOICE:
-            server.group_id = None
-        db.session.commit()
-        flash(f'Сервер «{server.name}» обновлён.', 'success')
-        return redirect(url_for('servers.list_servers'))
+        ssh_port = form.ssh_port.data or 22
+        new_ip, error = _push_address(server, (form.ip_address.data or '').strip(), ssh_port)
+        if error:
+            form.ip_address.errors.append(error)
+        else:
+            form.populate_obj(server)
+            if new_ip is not None:
+                server.ip_address = new_ip
+                server.ssh_port = ssh_port
+            if server.group_id == NO_GROUP_CHOICE:
+                server.group_id = None
+            db.session.commit()
+            flash(f'Сервер «{server.name}» обновлён.', 'success')
+            return redirect(url_for('servers.list_servers'))
     return render_template('servers/form.html', form=form,
                            title=f'Редактирование: {server.name}',
                            show_onboarding=False)
@@ -663,6 +697,25 @@ def edit_field(server_id):
     else:
         if not current_user.is_admin:
             abort(403, description='Только просмотр: нет прав на редактирование')
+
+    if attr == 'ip_address':
+        new_ip, error = _push_address(server, value, server.ssh_port or 22)
+        if error:
+            # 200 со старой ячейкой, а не 4xx: htmx 1.9 ошибочный ответ не
+            # подставляет, и ячейка осталась бы полем ввода. Причину показывает
+            # обработчик inlineEditError в base.html; json.dumps экранирует
+            # кириллицу, иначе заголовок не уйдёт в latin-1.
+            resp = make_response(render_template(
+                'servers/_cell.html',
+                server=server,
+                field=field_name,
+                value=server.ip_address,
+                passwords_visible=_passwords_visible(),
+            ))
+            resp.headers['HX-Trigger'] = json.dumps({'inlineEditError': error})
+            return resp
+        if new_ip is not None:
+            value = new_ip
 
     setattr(server, attr, value or None)
     db.session.commit()

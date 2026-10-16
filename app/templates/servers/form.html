@@ -14,6 +14,7 @@
             <div>
                 {{ form.ip_address.label(class_='field-label') }}
                 {{ form.ip_address(class_='field mt-1 font-mono', placeholder='192.168.1.10') }}
+                {% for err in form.ip_address.errors %}<p class="text-danger text-xs">{{ err }}</p>{% endfor %}
             </div>
             {# Группу выбирает только тот, кому есть из чего выбирать: у админа
                поля нет вовсе при редактировании (менять команду — дело суперадмина). #}

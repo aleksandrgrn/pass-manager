@@ -154,6 +154,20 @@ def test_server(server_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
     return _request("POST", f"/servers/test/{server_id}", job_id=job_id)
 
 
+def update_server_address(
+    server_id: int, ip_address: str, ssh_port: int, job_id: Optional[str] = None
+) -> Dict[str, Any]:
+    # E12: VPS Manager до сохранения проверяет вход по ключу на новый адрес —
+    # это заход на машину, как у add_server, отсюда и тот же таймаут.
+    return _request(
+        "POST",
+        f"/servers/{server_id}/address",
+        job_id=job_id,
+        timeout=ADD_SERVER_TIMEOUT,
+        json={"ip_address": ip_address, "ssh_port": ssh_port},
+    )
+
+
 def get_access_key(server_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
     return _request("GET", f"/servers/{server_id}/access-key", job_id=job_id)
 

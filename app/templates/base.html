@@ -227,6 +227,9 @@
         document.addEventListener('htmx:configRequest', (event) => {
             event.detail.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]').content;
         });
+        // Сервер отказал в правке ячейки (например, VPS Manager не принял новый IP):
+        // ячейка уже вернулась к старому значению, осталось сказать почему.
+        document.addEventListener('inlineEditError', (event) => alert(event.detail.value));
         // Ячейка: одиночный клик = копировать, двойной клик = редактировать
         function enterInlineEdit(cell) {
             if (cell.dataset.editing === '1') return;
