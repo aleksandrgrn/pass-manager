@@ -168,6 +168,30 @@ def update_server_address(
     )
 
 
+def rebootstrap_server(
+    server_id: int,
+    ip_address: str,
+    ssh_port: int,
+    username: str,
+    password: str,
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    # E13: новая машина у хостера — VPS Manager по паролю кладёт на неё прежний
+    # root-ключ и докатывает выданные доступы. Заход на машину, как у add_server.
+    return _request(
+        "POST",
+        f"/servers/{server_id}/rebootstrap",
+        job_id=job_id,
+        timeout=ADD_SERVER_TIMEOUT,
+        json={
+            "ip_address": ip_address,
+            "ssh_port": ssh_port,
+            "username": username,
+            "password": password,
+        },
+    )
+
+
 def get_access_key(server_id: int, job_id: Optional[str] = None) -> Dict[str, Any]:
     return _request("GET", f"/servers/{server_id}/access-key", job_id=job_id)
 

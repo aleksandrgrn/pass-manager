@@ -1,5 +1,6 @@
 """Server CRUD + HTMX endpoints."""
 import io
+import ipaddress
 import json
 import os
 import posixpath
@@ -29,7 +30,9 @@ from app.servers.forms import (
     INLINE_EDITABLE_FIELDS, INLINE_TOGGLE_FIELDS,
     PASSWORD_FORM_FIELDS,
 )
-from app.services.provisioning import OnboardingLockedError, start_onboarding
+from app.services.provisioning import (
+    OnboardingLockedError, start_new_machine, start_onboarding,
+)
 
 servers_bp = Blueprint('servers', __name__)
 
@@ -573,6 +576,51 @@ def reconnect(server_id):
 
     try:
         job = start_onboarding(server, current_user, bootstrap_password)
+    except OnboardingLockedError as exc:
+        flash(str(exc), 'error')
+        return back
+    return redirect(url_for('provisioning.job_page', job_id=job.id))
+
+
+@servers_bp.route('/<int:server_id>/new-machine', methods=['POST'])
+@login_required
+@role_required('admin', 'superadmin')
+def new_machine(server_id):
+    """Хостер выдал новую машину вместо старой (GRSA-163, этап B).
+
+    Только для подключённого сервера: неподключённому — обычное «Подключить».
+    Пароль root обязателен и только введённый: у новой машины он новый,
+    сохранённый в базе относится к старой.
+    """
+    server = _get_server_or_403(server_id)
+    back = redirect(url_for('servers.detail', server_id=server.id))
+    if server.vps_manager_server_id is None:
+        flash('Сервер не подключён к VPS Manager — используйте «Подключить».', 'error')
+        return back
+
+    try:
+        parsed_ip = ipaddress.ip_address((request.form.get('ip_address') or '').strip())
+    except ValueError:
+        parsed_ip = None
+    # fe80::1%eth0 — адрес интерфейса, VPS Manager такой отвергнет.
+    if parsed_ip is None or getattr(parsed_ip, 'scope_id', None):
+        flash('Некорректный IP-адрес новой машины.', 'error')
+        return back
+    ip_address = str(parsed_ip)
+    try:
+        ssh_port = int(request.form.get('ssh_port') or 0)
+    except ValueError:
+        ssh_port = 0
+    if not 1 <= ssh_port <= 65535:
+        flash('Порт должен быть числом от 1 до 65535.', 'error')
+        return back
+    password = request.form.get('password') or ''
+    if not password.strip():
+        flash('Введите пароль root новой машины от хостера.', 'error')
+        return back
+
+    try:
+        job = start_new_machine(server, current_user, password, ip_address, ssh_port)
     except OnboardingLockedError as exc:
         flash(str(exc), 'error')
         return back

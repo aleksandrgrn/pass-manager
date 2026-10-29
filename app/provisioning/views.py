@@ -5,7 +5,7 @@
 """
 import json
 
-from flask import Blueprint, abort, redirect, render_template, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, url_for
 from flask_login import current_user, login_required
 
 from app.access.rules import assert_can_access_server
@@ -46,10 +46,11 @@ def job_page(job_id):
     """
     job = _get_job_or_403(job_id)
     server = db.session.get(Server, job.server_id)
-    steps = json.loads(job.steps_json)['steps']
+    job_state = json.loads(job.steps_json)
     return render_template(
         'servers/_provisioning_modal.html',
-        job=job, server=server, steps=steps, provisioning_steps=STEPS,
+        job=job, server=server, steps=job_state['steps'], provisioning_steps=STEPS,
+        job_state=job_state,
     )
 
 
@@ -67,6 +68,7 @@ def run_step(job_id):
     return render_template(
         'servers/_provisioning_steps.html',
         job=job, steps=steps, provisioning_steps=STEPS,
+        job_state=json.loads(job.steps_json),
     )
 
 
@@ -80,5 +82,13 @@ def restart(job_id):
     страницу, что и первый запуск из servers.create.
     """
     job = _get_job_or_403(job_id)
+    # Restart из старой вкладки, когда у сервера уже есть задание новее: два
+    # конвейера пошли бы разом и делили один password_pending (GRSA-163).
+    if job.server_id is not None and ProvisioningJob.query.filter(
+        ProvisioningJob.server_id == job.server_id, ProvisioningJob.id > job.id,
+    ).first() is not None:
+        flash('У сервера есть более новое задание онбординга — перезапускать можно только его.',
+              'error')
+        return redirect(url_for('servers.detail', server_id=job.server_id))
     restart_job(job)
     return redirect(url_for('provisioning.job_page', job_id=job.id))

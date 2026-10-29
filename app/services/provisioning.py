@@ -52,14 +52,7 @@ def start_onboarding(server: Server, user, bootstrap_password: str) -> Provision
     FIX-6c: один активный job на сервер — если уже есть job со
     status in ('pending', 'running'), отказываем.
     """
-    existing = ProvisioningJob.query.filter(
-        ProvisioningJob.server_id == server.id,
-        ProvisioningJob.status.in_(_ACTIVE_JOB_STATUSES),
-    ).first()
-    if existing is not None:
-        raise OnboardingLockedError(
-            f'У сервера #{server.id} уже есть активный job онбординга (#{existing.id})',
-        )
+    _raise_if_active_job(server)
 
     # Захват сервера одним UPDATE ... WHERE (GRSA-163): проверка выше и вставка
     # job'а не атомарны, и два одновременных запроса прошли бы оба. Второй здесь
@@ -88,10 +81,57 @@ def start_onboarding(server: Server, user, bootstrap_password: str) -> Provision
             f'Сервер #{server.id} уже подключён к VPS Manager или его онбординг уже идёт',
         )
 
-    state = {
+    return _create_job(server, user, bootstrap_password)
+
+
+def start_new_machine(server: Server, user, bootstrap_password: str,
+                      ip_address: str, ssh_port: int) -> ProvisioningJob:
+    """Хостер выдал новую машину вместо старой (GRSA-163, этап B).
+
+    Тот же pipeline, но шаг bootstrap зовёт E13: VPS Manager подключает новую
+    машину к прежней записи — без дубля, с докаткой выданных доступов. Адрес
+    в нашей базе меняется только после успеха E13. Неподключённый сервер сюда
+    не пускаем: ему нужен обычный онбординг.
+    """
+    _raise_if_active_job(server)
+    claimed = db.session.execute(
+        update(Server)
+        .where(
+            Server.id == server.id,
+            Server.provisioning_status != 'provisioning',
+            Server.vps_manager_server_id.is_not(None),
+        )
+        .values(provisioning_status='provisioning')
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if not claimed:
+        db.session.rollback()
+        raise OnboardingLockedError(
+            f'Сервер #{server.id} не подключён к VPS Manager или его онбординг уже идёт',
+        )
+    return _create_job(server, user, bootstrap_password,
+                       new_machine={'ip_address': ip_address, 'ssh_port': ssh_port})
+
+
+def _raise_if_active_job(server: Server) -> None:
+    existing = ProvisioningJob.query.filter(
+        ProvisioningJob.server_id == server.id,
+        ProvisioningJob.status.in_(_ACTIVE_JOB_STATUSES),
+    ).first()
+    if existing is not None:
+        raise OnboardingLockedError(
+            f'У сервера #{server.id} уже есть активный job онбординга (#{existing.id})',
+        )
+
+
+def _create_job(server: Server, user, bootstrap_password: str,
+                new_machine: Dict[str, Any] | None = None) -> ProvisioningJob:
+    state: Dict[str, Any] = {
         'steps': {step_id: 'pending' for step_id in STEPS},
         'bootstrap_cred': encrypt(bootstrap_password),
     }
+    if new_machine is not None:
+        state['new_machine'] = new_machine
     job = ProvisioningJob(
         server_id=server.id,
         initiated_by=user.id,
@@ -208,19 +248,33 @@ def _step_catalog(job: ProvisioningJob, state: Dict[str, Any]) -> None:
 
 
 def _step_bootstrap(job: ProvisioningJob, state: Dict[str, Any]) -> None:
-    """E1 (`POST /servers/add`): bootstrap сервера в VPS Manager."""
+    """E1 (`POST /servers/add`): bootstrap сервера в VPS Manager.
+
+    Для новой машины у хостера — E13 по существующему номеру (см. start_new_machine).
+    """
     server = db.session.get(Server, job.server_id)
     bootstrap_cred = state.get('bootstrap_cred')
     password = decrypt(bootstrap_cred) if bootstrap_cred else None
+    new_machine = state.get('new_machine')
 
-    result = vps_client.add_server(
-        name=server.name,
-        ip_address=server.ip_address,
-        ssh_port=server.ssh_port or 22,
-        username=server.ssh_username,
-        password=password,
-        bootstrap_request_id=server.bootstrap_request_id,
-    )
+    if new_machine:
+        result = vps_client.rebootstrap_server(
+            server.vps_manager_server_id,
+            ip_address=new_machine['ip_address'],
+            ssh_port=new_machine['ssh_port'],
+            # Форма просит пароль именно root, а не пользователя из карточки.
+            username='root',
+            password=password,
+        )
+    else:
+        result = vps_client.add_server(
+            name=server.name,
+            ip_address=server.ip_address,
+            ssh_port=server.ssh_port or 22,
+            username=server.ssh_username,
+            password=password,
+            bootstrap_request_id=server.bootstrap_request_id,
+        )
 
     if not result.get('success'):
         job.status = 'failed'
@@ -229,7 +283,14 @@ def _step_bootstrap(job: ProvisioningJob, state: Dict[str, Any]) -> None:
         state['steps']['bootstrap'] = 'failed'
         return
 
-    server.vps_manager_server_id = result.get('server_id')
+    if new_machine:
+        # Адрес — в том виде, как записал VPS Manager, чтобы базы совпадали.
+        server.ip_address = (result.get('server') or {}).get('ip_address') \
+            or new_machine['ip_address']
+        server.ssh_port = new_machine['ssh_port']
+        state['redeploy'] = result.get('redeploy') or {}
+    else:
+        server.vps_manager_server_id = result.get('server_id')
     state.pop('bootstrap_cred', None)  # Р1: стираем сразу после успеха
     state['steps']['bootstrap'] = 'done'
 
