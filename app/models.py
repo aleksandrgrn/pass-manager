@@ -260,6 +260,47 @@ class FileAccessLog(db.Model):
         return f'<FileAccessLog {self.action} server={self.server_id} user={self.user_id} {self.result}>'
 
 
+class ServerChange(db.Model):
+    """Одно сохранение сервера в истории (GRSA-191): кто, когда, откуда.
+
+    Пишется перехватчиком в app/history.py, а не обработчиками — так в историю
+    попадает любой путь записи, включая конвейер и скрипты."""
+    __tablename__ = 'server_changes'
+    id = db.Column(db.Integer, primary_key=True)
+    server_id = db.Column(db.Integer, db.ForeignKey('servers.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # NULL = система
+    source = db.Column(db.String(32), nullable=False)  # manual/script/onboarding/new_machine
+    job_id = db.Column(db.Integer, db.ForeignKey('provisioning_jobs.id'), nullable=True)
+
+    # Каскад — средствами ORM: PRAGMA foreign_keys в SQLite не включён, и
+    # ondelete='CASCADE' сам по себе историю удалённого сервера не убрал бы.
+    server = db.relationship('Server', backref=db.backref(
+        'changes', lazy='dynamic', cascade='all, delete-orphan'))
+    user = db.relationship('User')
+    items = db.relationship('ServerChangeItem', backref='change',
+                            cascade='all, delete-orphan', order_by='ServerChangeItem.id')
+
+    def __repr__(self):
+        return f'<ServerChange server={self.server_id} source={self.source}>'
+
+
+class ServerChangeItem(db.Model):
+    """Изменение одного поля внутри сохранения. У секретов значений нет — только факт."""
+    __tablename__ = 'server_change_items'
+    id = db.Column(db.Integer, primary_key=True)
+    change_id = db.Column(db.Integer, db.ForeignKey('server_changes.id', ondelete='CASCADE'),
+                          nullable=False, index=True)
+    field = db.Column(db.String(64), nullable=False)  # имя атрибута Server, domain_added/…, created
+    old_value = db.Column(db.Text, nullable=True)
+    new_value = db.Column(db.Text, nullable=True)
+    is_secret = db.Column(db.Boolean, default=False, nullable=False)
+
+    def __repr__(self):
+        return f'<ServerChangeItem {self.field}>'
+
+
 class ServerGroup(db.Model):
     """Команда-владелец серверов (specs/track-c-access-design.md, Р3).
 

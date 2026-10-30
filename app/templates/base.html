@@ -207,6 +207,41 @@
       .intro strong { font-weight: 600; }
       .intro code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
                     background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+      /* GRSA-191: история изменений в карточке сервера */
+      .h-list  { list-style: none; margin: 0; padding: 0; }
+      .h-entry { display: grid; grid-template-columns: 13rem 1fr; gap: 1rem;
+                 padding: .6rem 0; border-top: 1px solid var(--line); }
+      .h-entry:first-child { border-top: none; }
+      .h-meta  { display: flex; flex-direction: column; gap: .15rem; font-size: 13px; }
+      .h-date  { color: var(--ink); font-variant-numeric: tabular-nums; }
+      .h-who   { color: var(--muted); }
+      .h-tag   { align-self: flex-start; font-size: 11px; padding: 0 .45rem; border-radius: 999px;
+                 margin-top: .15rem; }
+      .h-tag.manual   { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+      .h-tag.pipeline { background: var(--accent-weak); color: var(--accent); }
+      .h-changes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+                   gap: .25rem; font-size: 14px; overflow-wrap: anywhere; }
+      .h-field { color: var(--muted); display: inline-block; min-width: 9rem; }
+      .h-old   { color: var(--muted); text-decoration: line-through; }
+      .h-arr   { color: var(--muted); margin: 0 .2rem; }
+      .h-new   { color: var(--ink); }
+      .h-note  { color: var(--muted); font-style: italic; }
+      .h-more  { padding-top: .5rem; }
+      @media (max-width: 640px) { .h-entry { grid-template-columns: 1fr; gap: .3rem; } }
+
+      /* GRSA-191: поиск — подсветка совпадений и подпись «В истории» под строкой */
+      mark.hl { background: var(--warning-weak); color: inherit; border-radius: 3px; padding: 0 1px; }
+      table.tbl tr:has(+ tr.hist-hint) td { border-bottom: none; }
+      table.tbl tr.hist-hint td { padding-top: 0; padding-bottom: .6rem; }
+      table.tbl tr.hist-hint:hover td { background: transparent; }
+      .hist-line { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+                   font-size: 12px; color: var(--muted); }
+      .hist-line b { color: var(--ink); font-weight: 600; }
+      /* комментарий бывает длинным и многострочным — в подписи только начало */
+      .hist-line .val { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .hist-line .sep { color: var(--faint); }
+      .hist-line .more { color: var(--accent); margin-left: .4rem; }
     </style>
     <script>
       // Anti-FOUC: apply saved theme before first paint

@@ -119,6 +119,8 @@ def create_app(config_name=None):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # Register blueprints
+    from app import history  # импорт регистрирует перехватчик истории (GRSA-191)
+    history.init_app(app)
     from app.auth.views import auth_bp
     from app.servers.views import servers_bp
     from app.provisioning.views import provisioning_bp

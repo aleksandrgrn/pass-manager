@@ -1,0 +1,24 @@
+{# GRSA-191: сервер найден только по истории — показываем, где именно. Ожидает hint
+   ({item, change, more}) и server. #}
+{% set item, change = hint.item, hint.change %}
+{% set search_q = request.args.get('q') %}
+{% set mono = ' cell-mono' if item.field in HISTORY_MONO_FIELDS else '' %}
+<tr class="hist-hint" data-hint-for="{{ server.id }}">
+    <td></td>
+    <td colspan="13">
+        <div class="hist-line">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span>В истории:</span>
+            <b>{{ HISTORY_FIELD_LABELS.get(item.field, item.field) }}</b>
+            {% if item.old_value is not none %}<span class="val{{ mono }}" title="{{ item.old_value }}">{{ item.old_value|highlight(search_q) }}</span>{% endif %}
+            {% if item.old_value is not none and item.new_value is not none %}→{% endif %}
+            {% if item.new_value is not none %}<span class="val{{ mono }}" title="{{ item.new_value }}">{{ item.new_value|highlight(search_q) }}</span>{% endif %}
+            <span class="sep">·</span> {{ change.created_at|history_time }}
+            <span class="sep">·</span> {{ (change.user.display_name or change.user.username) if change.user else 'система' }}
+            <span class="sep">·</span> <span class="h-tag {{ 'manual' if change.source in ('manual', 'script') else 'pipeline' }}">{{ HISTORY_SOURCE_LABELS.get(change.source, change.source) }}</span>
+            {% if hint.more %}
+            <a href="{{ url_for('servers.detail', server_id=server.id) }}#history" class="more">+ ещё {{ hint.more }} {{ 'совпадение' if hint.more % 10 == 1 and hint.more % 100 != 11 else ('совпадения' if hint.more % 10 in (2, 3, 4) and hint.more % 100 not in (12, 13, 14) else 'совпадений') }} в истории</a>
+            {% endif %}
+        </div>
+    </td>
+</tr>

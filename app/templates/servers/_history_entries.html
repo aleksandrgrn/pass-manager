@@ -1,0 +1,37 @@
+{# GRSA-191: порция записей истории. Кнопка «Показать ещё» — тоже <li>: htmx
+   заменяет её следующей порцией, и записи дописываются в тот же список. #}
+{% for change in history %}
+<li class="h-entry">
+    <div class="h-meta">
+        <span class="h-date">{{ change.created_at|history_time }}</span>
+        <span class="h-who">{{ (change.user.display_name or change.user.username) if change.user else 'система' }}</span>
+        <span class="h-tag {{ 'manual' if change.source in ('manual', 'script') else 'pipeline' }}">{{ HISTORY_SOURCE_LABELS.get(change.source, change.source) }}</span>
+    </div>
+    <ul class="h-changes">
+        {% for item in change.items %}
+        {% set mono = ' cell-mono' if item.field in HISTORY_MONO_FIELDS else '' %}
+        <li>
+            <span class="h-field">{{ HISTORY_FIELD_LABELS.get(item.field, item.field) }}</span>
+            {% if item.is_secret %}
+            <span class="h-note">изменён</span>
+            {% elif item.field == 'domain_added' %}
+            <span class="h-new{{ mono }}">{{ item.new_value }}</span>
+            {% elif item.field == 'domain_removed' %}
+            <span class="h-old{{ mono }}">{{ item.old_value }}</span>
+            {% elif item.field != 'created' %}
+            <span class="h-old{{ mono }}">{{ item.old_value if item.old_value is not none else '—' }}</span>
+            <span class="h-arr">→</span>
+            <span class="h-new{{ mono }}">{{ item.new_value if item.new_value is not none else '—' }}</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</li>
+{% endfor %}
+{% if next_offset < history_total %}
+<li class="h-more">
+    <button type="button" class="btn ghost"
+            hx-get="{{ url_for('servers.history', server_id=server.id, offset=next_offset) }}"
+            hx-target="closest li" hx-swap="outerHTML">Показать ещё {{ history_total - next_offset }}</button>
+</li>
+{% endif %}

@@ -3,20 +3,27 @@
 {% block content %}
 <div class="flex flex-col gap-4">
     <div class="flex flex-wrap items-center gap-3">
-        <h1 class="text-xl font-semibold text-ink">Серверы <span class="text-faint text-sm font-normal tabular-nums">({{ pagination.total }})</span></h1>
+        <h1 class="text-xl font-semibold text-ink">Серверы <span id="servers-count" class="text-faint text-sm font-normal tabular-nums">({{ pagination.total }})</span></h1>
 
         <span class="h-6 w-px bg-line hidden sm:block" aria-hidden="true"></span>
 
-        <!-- Filters -->
-        <form method="GET" action="{{ url_for('servers.list_servers') }}" class="flex flex-wrap items-center gap-2">
-            {{ filter_form.q(class_='px-3 py-2 border border-line bg-surface text-ink rounded text-sm placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/40', placeholder='Поиск по имени/IP/провайдеру', value=request.args.get('q','')) }}
+        <!-- Filters. GRSA-191: результаты обновляются по мере ввода. Из ответа
+             берётся только блок результатов и счётчик — сама форма не
+             перерисовывается, поэтому фокус и курсор в поле остаются на месте.
+             replace-url, а не push: «Назад» не должен шагать по буквам запроса.
+             Без JS форма уходит обычным GET по Enter. -->
+        <form method="GET" action="{{ url_for('servers.list_servers') }}" class="flex flex-wrap items-center gap-2"
+              hx-get="{{ url_for('servers.list_servers') }}"
+              hx-trigger="input changed delay:300ms from:#q, change from:#show_inactive, submit"
+              hx-target="#servers-results" hx-select="#servers-results" hx-swap="outerHTML"
+              hx-select-oob="#servers-count" hx-replace-url="true">
+            {{ filter_form.q(class_='px-3 py-2 border border-line bg-surface text-ink rounded text-sm placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/40', placeholder='Имя, IP, провайдер, домен или прежнее значение', value=request.args.get('q',''), style='min-width: 22rem', autocomplete='off') }}
             <label class="inline-flex items-center gap-2 text-sm text-muted">
                 {{ filter_form.show_inactive(checked=request.args.get('show_inactive')=='y') }}
                 {{ filter_form.show_inactive.label.text }}
             </label>
             <input type="hidden" name="sort" value="{{ sort }}">
             <input type="hidden" name="dir" value="{{ direction }}">
-            <button type="submit" class="btn secondary">Применить</button>
             <a href="{{ url_for('servers.list_servers') }}" class="btn ghost">Сбросить</a>
         </form>
 
@@ -26,6 +33,7 @@
         </a>
     </div>
 
+    <div id="servers-results" class="flex flex-col gap-4">
     <!-- Table -->
     <div class="table-wrap">
         <table class="tbl">
@@ -65,6 +73,8 @@
             <tbody id="servers-tbody">
                 {% for server in servers %}
                 {% include 'servers/_row.html' %}
+                {% set hint = history_hints.get(server.id) %}
+                {% if hint %}{% include 'servers/_history_hint.html' %}{% endif %}
                 {% else %}
                 <tr>
                     <td colspan="14" class="text-center text-faint" style="padding: 24px 12px;">
@@ -86,6 +96,7 @@
         {% endfor %}
     </nav>
     {% endif %}
+    </div>
 </div>
 
 <style>

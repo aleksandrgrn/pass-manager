@@ -1,10 +1,13 @@
+{# GRSA-191: совпадение с запросом поиска подсвечивается в ячейке. У POST-ответов
+   (переключатель, выдача доступа) запроса нет — и подсветки тоже. #}
+{% set search_q = request.args.get('q') %}
 <tr id="server-row-{{ server.id }}" class="{% if not server.active %}opacity-50{% endif %}">
     <td class="cell-num">{{ server.id }}</td>
     <td>
         <div
             data-inline-edit="name" data-server-id="{{ server.id }}"
             class="cursor-text font-medium text-ink"
-            title="Двойной клик для редактирования">{{ server.name }}</div>
+            title="Двойной клик для редактирования">{{ server.name|highlight(search_q) }}</div>
     </td>
     {% if passwords_visible %}
     <td>
@@ -14,10 +17,10 @@
     </td>
     {% endif %}
     <td class="cell-mono">
-        <div data-inline-edit="ip_address" data-server-id="{{ server.id }}" class="cursor-text">{{ server.ip_address or '—' }}</div>
+        <div data-inline-edit="ip_address" data-server-id="{{ server.id }}" class="cursor-text">{{ server.ip_address|highlight(search_q) if server.ip_address else '—' }}</div>
     </td>
     <td>
-        <div data-inline-edit="provider" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider or '—' }}</div>
+        <div data-inline-edit="provider" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider|highlight(search_q) if server.provider else '—' }}</div>
     </td>
     <td>
         <div data-inline-edit="provider_login" data-server-id="{{ server.id }}" class="cursor-text">{{ server.provider_login or '—' }}</div>
@@ -28,7 +31,7 @@
     <td>
         <div class="cell-domains">
             {% for d in server.domains %}
-            <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain }}</span>
+            <span class="inline-block bg-surface2 border border-line text-muted px-1.5 py-0.5 rounded text-xs mr-1 mb-0.5">{{ d.domain|highlight(search_q) }}</span>
             {% endfor %}
         </div>
     </td>
@@ -63,7 +66,7 @@
     </td>
     {% endif %}
     <td class="cell-flex">
-        <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-muted text-xs">{{ server.notes or '—' }}</div>
+        <div data-inline-edit="notes" data-server-id="{{ server.id }}" class="cursor-text text-muted text-xs">{{ server.notes|highlight(search_q) if server.notes else '—' }}</div>
     </td>
     <td class="text-center whitespace-nowrap">
         <div class="row-actions">

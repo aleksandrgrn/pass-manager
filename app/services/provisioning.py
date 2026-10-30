@@ -26,6 +26,7 @@ from flask import current_app
 from sqlalchemy import func, update
 
 from app.extensions import db
+from app.history import SOURCE_NEW_MACHINE, SOURCE_ONBOARDING, change_context
 from app.models import ProvisioningJob, Server
 from app.security import decrypt, encrypt
 from app.services import vps_client
@@ -158,6 +159,14 @@ def run_next_step(job: ProvisioningJob) -> Dict[str, str]:
     обработчика переводит шаг в 'failed', поэтому 'running' не залипает.
     """
     state = json.loads(job.steps_json) if job.steps_json else {'steps': {}}
+    # GRSA-191: изменения сервера шагом пишутся в историю от имени запустившего,
+    # а не того, кто опрашивает страницу job (current_user здесь — наблюдатель).
+    source = SOURCE_NEW_MACHINE if state.get('new_machine') else SOURCE_ONBOARDING
+    with change_context(source, job.initiated_by, job.id):
+        return _run_next_step(job, state)
+
+
+def _run_next_step(job: ProvisioningJob, state: Dict[str, Any]) -> Dict[str, str]:
     steps_state = state.setdefault('steps', {})
 
     if job.status not in _TERMINAL_JOB_STATUSES:

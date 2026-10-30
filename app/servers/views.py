@@ -12,12 +12,12 @@ from flask import (
     current_app, abort, Response, send_file, make_response
 )
 from flask_login import login_required, current_user
-from sqlalchemy import or_
+from sqlalchemy import and_, exists, or_
 
 from app.extensions import db
 from app.models import (
     Server, Domain, ProvisioningJob, ServerGroup, ServerGroupMembership,
-    AccessAssignment, FileAccessLog,
+    AccessAssignment, FileAccessLog, ServerChange, ServerChangeItem,
 )
 from app.access.rules import (
     assert_can_access_server, visible_servers, can_self_grant,
@@ -47,18 +47,42 @@ SORTABLE_COLUMNS = {
 }
 
 
+def _like(q):
+    # % и _ из запроса — буквальные символы, а не шаблон LIKE
+    escaped = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return f'%{escaped}%'
+
+
+def _history_item_matches(like):
+    """Элемент истории совпадает с запросом. Секреты не ищутся: значений у них нет,
+    но условие стоит явно — на случай, если значения когда-нибудь появятся."""
+    return and_(
+        ServerChangeItem.is_secret.is_(False),
+        or_(ServerChangeItem.old_value.ilike(like, escape='\\'),
+            ServerChangeItem.new_value.ilike(like, escape='\\')),
+    )
+
+
 def _apply_filters(query, form):
     """Apply search/active filters to query."""
     q = form.q.data
     if q:
-        # % и _ из запроса — буквальные символы, а не шаблон LIKE
-        escaped = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        like = f'%{escaped}%'
+        like = _like(q)
+        # GRSA-191: кроме текущих полей — домены и прежние/новые значения истории.
+        domain_match = exists().where(
+            Domain.server_id == Server.id, Domain.domain.ilike(like, escape='\\'))
+        history_match = exists().where(
+            ServerChange.server_id == Server.id,
+            ServerChangeItem.change_id == ServerChange.id,
+            _history_item_matches(like),
+        )
         query = query.filter(or_(
             Server.name.ilike(like, escape='\\'),
             Server.ip_address.ilike(like, escape='\\'),
             Server.provider.ilike(like, escape='\\'),
             Server.notes.ilike(like, escape='\\'),
+            domain_match,
+            history_match,
         ))
     # Неактуальные (в старой системе — тире в начале имени, таких 182 из 401)
     # прячем из обычного просмотра, но не из поиска: пустой экран в ответ на
@@ -67,6 +91,39 @@ def _apply_filters(query, form):
     if not form.show_inactive.data and not q:
         query = query.filter(Server.active.is_(True))
     return query
+
+
+def _history_hints(servers, q):
+    """Подписи «В истории: …» для серверов, найденных только по истории (GRSA-191).
+
+    Сервер, у которого запрос виден в текущих колонках или доменах, подписи не
+    получает — там совпадение подсвечено прямо в ячейке. Остальным — последнее
+    совпадение в истории и сколько ещё их там.
+    """
+    if not q:
+        return {}
+    needle = q.lower()
+
+    def visible_match(server):
+        values = [server.name, server.ip_address, server.provider, server.notes]
+        values += [d.domain for d in server.domains]
+        return any(v and needle in v.lower() for v in values)
+
+    ids = [s.id for s in servers if not visible_match(s)]
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(ServerChangeItem, ServerChange)
+        .join(ServerChange, ServerChangeItem.change_id == ServerChange.id)
+        .filter(ServerChange.server_id.in_(ids), _history_item_matches(_like(q)))
+        .order_by(ServerChange.id.desc(), ServerChangeItem.id.desc())
+        .all()
+    )
+    hints = {}
+    for item, change in rows:
+        hint = hints.setdefault(change.server_id, {'item': item, 'change': change, 'more': -1})
+        hint['more'] += 1
+    return hints
 
 
 def _passwords_visible():
@@ -195,6 +252,7 @@ def list_servers():
         no_group_access=no_group_access,
         access_states=access_states,
         access_counts=access_counts,
+        history_hints=_history_hints(servers, form.q.data),
     )
 
 
@@ -215,6 +273,9 @@ def detail(server_id):
         'servers/detail.html',
         server=server,
         domains=domains,
+        **_history_page(server, 0),
+        history_since=db.session.query(db.func.min(ServerChange.created_at))
+        .filter(ServerChange.server_id == server.id).scalar(),
         passwords_visible=_passwords_visible(),
         provisioning_job=provisioning_job,
         can_grant=can_self_grant(current_user, server),
@@ -222,6 +283,29 @@ def detail(server_id):
             user_id=current_user.id, server_id=server.id, state='active',
         ).first() is not None,
     )
+
+
+HISTORY_PAGE_SIZE = 20
+
+
+def _history_page(server, offset):
+    """Порция истории сервера (GRSA-191): новые сверху, по HISTORY_PAGE_SIZE."""
+    query = server.changes.order_by(ServerChange.id.desc())
+    return {
+        'history': query.offset(offset).limit(HISTORY_PAGE_SIZE).all(),
+        'history_total': query.count(),
+        'next_offset': offset + HISTORY_PAGE_SIZE,
+    }
+
+
+@servers_bp.route('/<int:server_id>/history')
+@login_required
+def history(server_id):
+    """«Показать ещё» в блоке истории карточки — следующая порция записей."""
+    server = _get_server_or_403(server_id)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    return render_template('servers/_history_entries.html', server=server,
+                           **_history_page(server, offset))
 
 
 def _grant_access(user, server):

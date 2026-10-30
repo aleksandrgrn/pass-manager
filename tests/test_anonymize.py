@@ -200,6 +200,59 @@ class TestAnonymizeRun:
             live_conn.close()
 
 
+class TestAnonymizeHistory:
+    """GRSA-191: история хранит прежние значения тех же полей — их тоже чистим."""
+
+    def _add_history(self, path: Path) -> None:
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("INSERT INTO server_changes (id, server_id, source) VALUES (900, 1, 'manual')")
+            rows = [('notes', 'старый root: P@ss', 'новый'), ('provider_login', 'a@x', 'b@x'),
+                    ('ip_address', '192.0.2.1', '192.0.2.2'), ('name', 'old-name', 'new-name')]
+            conn.executemany(
+                'INSERT INTO server_change_items (change_id, field, old_value, new_value, is_secret) '
+                'VALUES (900, ?, ?, ?, 0)', rows)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _items(self, path: Path) -> dict:
+        conn = sqlite3.connect(path)
+        try:
+            rows = conn.execute('SELECT field, old_value, new_value FROM server_change_items '
+                                'WHERE change_id = 900').fetchall()
+        finally:
+            conn.close()
+        return {f: (o, n) for f, o, n in rows}
+
+    def test_sensitive_history_values_cleared(self, tmp_path):
+        source, copy = tmp_path / 'source.db', tmp_path / 'copy.db'
+        _create_source_db(source)
+        self._add_history(source)
+
+        result = _run_script(source, copy)
+        assert result.returncode == 0, result.stderr
+        assert self._items(copy) == {
+            'notes': (None, None), 'provider_login': (None, None),
+            'ip_address': ('192.0.2.1', '192.0.2.2'), 'name': ('old-name', 'new-name'),
+        }
+        assert self._items(source)['notes'] == ('старый root: P@ss', 'новый')
+
+    def test_db_without_history_tables(self, tmp_path):
+        source, copy = tmp_path / 'source.db', tmp_path / 'copy.db'
+        _create_source_db(source)
+        conn = sqlite3.connect(source)
+        conn.execute('DROP TABLE server_change_items')
+        conn.execute('DROP TABLE server_changes')
+        conn.commit()
+        conn.close()
+
+        result = _run_script(source, copy)
+        assert result.returncode == 0, result.stderr
+        for row in _sensitive_values(copy):
+            assert row == [None] * len(EXPECTED_SENSITIVE_COLUMNS)
+
+
 class TestAnonymizeFailures:
     def test_refuses_same_path(self, tmp_path):
         """Источник и копия — один файл: ненулевой код, исходник не изменён."""

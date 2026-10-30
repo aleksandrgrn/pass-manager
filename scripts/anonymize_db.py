@@ -66,6 +66,17 @@ def anonymize_db(source_path, copy_path):
     try:
         cur = conn.execute(f'UPDATE servers SET {assignments}')
         servers_processed = cur.rowcount
+        # GRSA-191: история хранит прежние и новые значения тех же полей —
+        # обнуляем их там же. В базе до GRSA-191 таблицы истории ещё нет.
+        has_history = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'server_change_items'"
+        ).fetchone()
+        if has_history:
+            placeholders = ', '.join('?' for _ in SENSITIVE_COLUMNS)
+            conn.execute(
+                'UPDATE server_change_items SET old_value = NULL, new_value = NULL '
+                f'WHERE field IN ({placeholders})', SENSITIVE_COLUMNS,
+            )
         domains_left = conn.execute('SELECT COUNT(*) FROM domains').fetchone()[0]
         conn.commit()
     finally:
