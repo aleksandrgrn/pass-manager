@@ -242,3 +242,27 @@ class TestCSRFProtection:
         )
         # С корректным токеном форма принимается → 302 (создан и редирект)
         assert resp.status_code == 302
+
+    def test_token_outlives_hour_within_session(self, app, admin_user, monkeypatch):
+        """Токен из meta живёт, пока жива сессия: список серверов держат
+        открытым весь день, и через час «Проверить сеть» ловила 400."""
+        import re
+        import time
+        app.config['WTF_CSRF_ENABLED'] = True
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(admin_user.id)
+            sess['_fresh'] = True
+        token = re.search(
+            r'name="csrf_token"[^>]*value="([^"]+)"',
+            client.get('/servers/new').get_data(as_text=True),
+        ).group(1)
+
+        later = time.time() + 8 * 3600
+        monkeypatch.setattr('itsdangerous.timed.time.time', lambda: later)
+        resp = client.post('/servers/new', data={
+            'name': 'csrf-late-server',
+            'password': 'Init-Pass-123!',
+            'csrf_token': token,
+        })
+        assert resp.status_code == 302

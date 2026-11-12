@@ -406,7 +406,7 @@ class TestLiveSearch:
         form = html[start:html.index('</form>', start)]
         assert 'hx-select="#servers-results"' in form
         assert 'hx-select-oob="#servers-count"' in form
-        assert 'from:#q' in form and 'from:#show_inactive' in form
+        assert 'from:#q' in form
         assert 'Применить' not in form
         # поле ввода — вне заменяемого блока, иначе терялся бы фокус
         results = html[html.index('id="servers-results"'):]

@@ -2,7 +2,7 @@ import logging
 import time
 from collections import defaultdict
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, session
 from flask_login import login_user, logout_user, login_required, current_user
 from app.extensions import db, login_manager
 from app.models import User
@@ -110,6 +110,7 @@ def login():
                 display_name=ldap_result['user_info'].get('display_name'),
                 is_local=False,
             )
+            session.permanent = True  # иначе PERMANENT_SESSION_LIFETIME не действует
             login_user(user)
             _reset_attempts(client_ip)
             next_page = request.args.get('next')
@@ -121,6 +122,7 @@ def login():
             if not local_user.is_active:
                 flash('Учётная запись отключена.', 'error')
                 return render_template('auth/login.html', form=form)
+            session.permanent = True
             login_user(local_user)
             _reset_attempts(client_ip)
             next_page = request.args.get('next')

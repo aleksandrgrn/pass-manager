@@ -88,7 +88,7 @@ def _apply_filters(query, form):
     # прячем из обычного просмотра, но не из поиска: пустой экран в ответ на
     # запрос о существующем сервере читается как «его нет», а это худший из
     # возможных ответов — человек пойдёт заводить дубль.
-    if not form.show_inactive.data and not q:
+    if not q:
         query = query.filter(Server.active.is_(True))
     return query
 

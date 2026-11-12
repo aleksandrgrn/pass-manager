@@ -305,17 +305,19 @@ class TestInactiveVisibility:
         assert 'mail_01 50%' in body
         assert sample_server.name not in body
 
-    def test_checkbox_shows_inactive(self, admin_client, inactive_server):
+    def test_no_inactive_checkbox(self, admin_client, inactive_server):
+        """Галки нет: неактивные видны только в поиске, старая ссылка с
+        параметром их не показывает."""
         body = admin_client.get('/servers/?show_inactive=y').get_data(as_text=True)
-        assert 'old-mail-relay' in body
+        assert 'show_inactive' not in body
+        assert 'old-mail-relay' not in body
 
     def test_sort_links_keep_filters(self, admin_client, sample_server):
         import re
         body = admin_client.get(
-            '/servers/?q=vps&show_inactive=y'
+            '/servers/?q=vps'
         ).get_data(as_text=True)
         links = re.findall(r'href="\?sort=[^"]*"', body)
         assert links, 'ссылок сортировки в шапке не нашлось'
         for link in links:
             assert 'q=vps' in link, f'ссылка теряет поиск: {link}'
-            assert 'show_inactive=y' in link, f'ссылка теряет галку: {link}'

@@ -51,8 +51,11 @@ class Config:
     ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
 
     # Безопасность сессий и форм
-    PERMANENT_SESSION_LIFETIME = 32400  # 9 часов: рабочий день + обед (в секундах)
-    WTF_CSRF_TIME_LIMIT = 3600  # CSRF-токен живёт 1 час
+    PERMANENT_SESSION_LIFETIME = 43200  # 12 часов (в секундах)
+    # CSRF-токен живёт, пока жива сессия. Он лежит в meta страницы и
+    # обновляется только при полной загрузке, а список серверов держат
+    # открытым весь день: с пределом в час HTMX-запросы через час ловили 400.
+    WTF_CSRF_TIME_LIMIT = None
 
     # LDAP
     LDAP_SERVER = os.environ.get('LDAP_SERVER', '')

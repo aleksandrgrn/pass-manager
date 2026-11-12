@@ -14,14 +14,10 @@
              Без JS форма уходит обычным GET по Enter. -->
         <form method="GET" action="{{ url_for('servers.list_servers') }}" class="flex flex-wrap items-center gap-2"
               hx-get="{{ url_for('servers.list_servers') }}"
-              hx-trigger="input changed delay:300ms from:#q, change from:#show_inactive, submit"
+              hx-trigger="input changed delay:300ms from:#q, submit"
               hx-target="#servers-results" hx-select="#servers-results" hx-swap="outerHTML"
               hx-select-oob="#servers-count" hx-replace-url="true">
             {{ filter_form.q(class_='px-3 py-2 border border-line bg-surface text-ink rounded text-sm placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/40', placeholder='Имя, IP, провайдер, домен или прежнее значение', value=request.args.get('q',''), style='min-width: 22rem', autocomplete='off') }}
-            <label class="inline-flex items-center gap-2 text-sm text-muted">
-                {{ filter_form.show_inactive(checked=request.args.get('show_inactive')=='y') }}
-                {{ filter_form.show_inactive.label.text }}
-            </label>
             <input type="hidden" name="sort" value="{{ sort }}">
             <input type="hidden" name="dir" value="{{ direction }}">
             <a href="{{ url_for('servers.list_servers') }}" class="btn ghost">Сбросить</a>
@@ -42,8 +38,8 @@
                     {% set next_dir = 'desc' if direction == 'asc' else 'asc' %}
                     {% set arrow = '↓' if direction == 'asc' else '↑' %}
                     {# Хвост фильтров, который обязана нести каждая ссылка: без него
-                       щелчок по заголовку молча сбрасывал поиск и галку. #}
-                    {% set filter_qs %}{% if request.args.get('q') %}&q={{ request.args.get('q')|urlencode }}{% endif %}{% if request.args.get('show_inactive') %}&show_inactive=y{% endif %}{% endset %}
+                       щелчок по заголовку молча сбрасывал поиск. #}
+                    {% set filter_qs %}{% if request.args.get('q') %}&q={{ request.args.get('q')|urlencode }}{% endif %}{% endset %}
                     <th>
                         <a href="?sort=id&dir={{ next_dir }}{{ filter_qs }}"
                            class="{% if sort=='id' %}sort-active{% endif %}">ID {% if sort=='id' %}{{ arrow }}{% endif %}</a>

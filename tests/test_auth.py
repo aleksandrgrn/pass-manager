@@ -31,6 +31,41 @@ class TestLoginPost:
         assert resp.status_code == 302
         assert resp.headers['Location'].endswith('/servers/')
 
+    def test_login_session_expires_after_12h(self, client, admin_user):
+        """Сессия постоянная: без этого PERMANENT_SESSION_LIFETIME не действует
+        и cookie живёт до закрытия браузера."""
+        resp = client.post(
+            '/auth/login',
+            data={'username': 'admin_test', 'password': 'pass123'},
+            environ_base={'REMOTE_ADDR': '198.51.100.12'},
+        )
+        self._assert_session_lives_12h(resp)
+
+    def test_ldap_login_session_expires_after_12h(self, app, client):
+        app.config['LDAP_SERVER'] = 'dc01.example.local'
+        ok = {'authenticated': True,
+              'user_info': {'username': 'ldap_user', 'display_name': 'LDAP User'}}
+        with patch('app.auth.views.authenticate_ldap', return_value=ok):
+            resp = client.post(
+                '/auth/login',
+                data={'username': 'ldap_user', 'password': 'whatever'},
+                environ_base={'REMOTE_ADDR': '198.51.100.13'},
+            )
+        assert resp.headers['Location'].endswith('/servers/')
+        self._assert_session_lives_12h(resp)
+
+    @staticmethod
+    def _assert_session_lives_12h(resp):
+        import re
+        import time
+        from email.utils import parsedate_to_datetime
+        cookie = next(c for c in resp.headers.getlist('Set-Cookie')
+                      if c.startswith('session='))
+        expires = re.search(r'Expires=([^;]+)', cookie)
+        assert expires, f'cookie без срока: {cookie}'
+        left = parsedate_to_datetime(expires.group(1)).timestamp() - time.time()
+        assert abs(left - 12 * 3600) < 60
+
     def test_wrong_password_redirects_back(self, client, admin_user):
         """Неверный пароль → 302 назад на форму (PRG), а не отрисовка на POST.
 
